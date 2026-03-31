@@ -1,27 +1,50 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useAuthStore } from '@/stores/authStore'
+import { AnnouncementModal } from '@/components/announcements/AnnouncementModal'
+import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
 export default function LoginPage() {
   const router = useRouter()
   const { login, isLoading } = useAuthStore()
-  const [email, setEmail] = useState('')
+  const [email, setEmail]     = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
+  const [announcements, setAnnouncements] = useState<any[]>([])
+  const [showAnnouncements, setShowAnnouncements] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     try {
       await login(email, password)
       toast.success('Bem-vindo à missão! 🚀')
+
+      // Busca comunicados não lidos após login
+      try {
+        const { data } = await api.get('/announcements/me')
+        const unread = data.announcements.filter((a: any) => !a.isRead)
+        if (unread.length > 0) {
+          setAnnouncements(unread)
+          setShowAnnouncements(true)
+          return // Aguarda o usuário fechar os comunicados antes de redirecionar
+        }
+      } catch {
+        // Falha silenciosa — segue para o board
+      }
+
       router.push('/board')
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? 'Credenciais inválidas')
     }
+  }
+
+  function handleCloseAnnouncements() {
+    setShowAnnouncements(false)
+    router.push('/board')
   }
 
   return (
@@ -163,7 +186,16 @@ export default function LoginPage() {
         <div className="absolute -top-px left-8 right-8 h-px bg-gradient-to-r from-transparent via-neon-violet/50 to-transparent" />
         <div className="absolute -bottom-px left-8 right-8 h-px bg-gradient-to-r from-transparent via-neon-cyan/30 to-transparent" />
       </motion.div>
+
+      {/* Modal de comunicados não lidos */}
+      <AnimatePresence>
+        {showAnnouncements && (
+          <AnnouncementModal
+            announcements={announcements}
+            onClose={handleCloseAnnouncements}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
-

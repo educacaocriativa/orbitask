@@ -30,6 +30,13 @@ enum NotificationType {
   CARD_ASSIGNED
 }
 
+enum AnnouncementTarget {
+  ALL
+  BOARD
+  CARD
+  USER
+}
+
 enum NotificationStatus {
   PENDING
   SENT
@@ -77,8 +84,11 @@ model User {
   mentionedIn       Mention[]           @relation("MentionedUser")
   mentionsMade      Mention[]           @relation("MentionedBy")
   mentionReplies    Mention[]           @relation("MentionReplier")
-  accessLogs        AccessLog[]
-  notifications     NotificationQueue[] @relation("NotificationRecipient")
+  accessLogs              AccessLog[]
+  notifications           NotificationQueue[]    @relation("NotificationRecipient")
+  announcementsCreated    Announcement[]         @relation("AnnouncementCreator")
+  announcementReplies     AnnouncementReply[]    @relation("AnnouncementReplier")
+  announcementReads       AnnouncementRead[]     @relation("AnnouncementReader")
 
   @@map("users")
 }
@@ -318,6 +328,59 @@ model NotificationQueue {
   @@index([status, scheduledFor])
   @@index([recipientId])
   @@map("notification_queue")
+}
+
+// ─────────────────────────────────────────────
+//  ANNOUNCEMENTS (COMUNICADOS)
+// ─────────────────────────────────────────────
+
+model Announcement {
+  id         String             @id @default(uuid())
+  title      String
+  content    String             @db.Text
+  targetType AnnouncementTarget @map("target_type")
+  targetId   String?            @map("target_id")
+
+  createdById String @map("created_by_id")
+  createdBy   User   @relation("AnnouncementCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  replies AnnouncementReply[]
+  reads   AnnouncementRead[]
+
+  @@map("announcements")
+}
+
+model AnnouncementReply {
+  id      String @id @default(uuid())
+  content String @db.Text
+
+  announcementId String       @map("announcement_id")
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  authorId String @map("author_id")
+  author   User   @relation("AnnouncementReplier", fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("announcement_replies")
+}
+
+model AnnouncementRead {
+  id String @id @default(uuid())
+
+  announcementId String       @map("announcement_id")
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  userId String @map("user_id")
+  user   User   @relation("AnnouncementReader", fields: [userId], references: [id])
+
+  readAt DateTime @default(now()) @map("read_at")
+
+  @@unique([announcementId, userId])
+  @@map("announcement_reads")
 }
 
 // ─────────────────────────────────────────────
