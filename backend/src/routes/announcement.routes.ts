@@ -135,4 +135,36 @@ export async function announcementRoutes(app: FastifyInstance) {
     await prisma.announcement.delete({ where: { id } })
     return reply.send({ ok: true })
   })
+
+  // ── GET /announcements/admin/boards — Todos os boards ────
+  app.get('/announcements/admin/boards', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Forbidden', 403)
+
+    const boards = await prisma.board.findMany({
+      where: { isArchived: false },
+      select: { id: true, title: true },
+      orderBy: { title: 'asc' },
+    })
+
+    return reply.send({ boards })
+  })
+
+  // ── GET /announcements/admin/cards — Cards por board ─────
+  app.get('/announcements/admin/cards', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Forbidden', 403)
+
+    const { boardId } = request.query as { boardId?: string }
+
+    const cards = await prisma.card.findMany({
+      where: {
+        isArchived: false,
+        ...(boardId ? { boardId } : {}),
+      },
+      select: { id: true, title: true, boardId: true },
+      orderBy: { title: 'asc' },
+      take: 100,
+    })
+
+    return reply.send({ cards })
+  })
 }
