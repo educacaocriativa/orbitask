@@ -48,6 +48,7 @@ export const useAuthStore = create<AuthState>()(
           await api.post('/auth/logout')
         } finally {
           localStorage.removeItem('orbitask:token')
+          localStorage.removeItem('orbitask:auth')
           removeAuthCookie()
           set({ user: null, token: null })
           window.location.href = '/auth/login'
