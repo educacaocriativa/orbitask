@@ -1,0 +1,158 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────
+#  ORBITASK — Docker Compose
+#  All services for local dev and VPS deployment
+# ─────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: orbitask_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: orbitask
+      POSTGRES_PASSWORD: orbitask_password
+      POSTGRES_DB: orbitask_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U orbitask -d orbitask_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ───────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: orbitask_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO (S3-compatible file storage) ─────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: orbitask_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: orbitask_minio
+      MINIO_ROOT_PASSWORD: orbitask_minio_secret
+    volumes:
+      - minio_data:/data
+    ports:
+      - '9000:9000'   # API
+      - '9001:9001'   # Console UI
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Evolution API (WhatsApp) ────────────────────────────
+  evolution:
+    image: atendai/evolution-api:latest
+    container_name: orbitask_evolution
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    environment:
+      SERVER_URL: http://localhost:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-orbitask-evolution-key}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'true'
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://orbitask:orbitask_password@postgres:5432/evolution_db
+      REDIS_URI: redis://redis:6379/1
+      LOG_LEVEL: ERROR
+      DEL_INSTANCE: 'false'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - evolution_data:/evolution/instances
+
+  # ── Backend API ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: orbitask_backend
+    restart: unless-stopped
+    ports:
+      - '3333:3333'
+    environment:
+      NODE_ENV: production
+      PORT: 3333
+      DATABASE_URL: postgresql://orbitask:orbitask_password@postgres:5432/orbitask_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      EVOLUTION_API_URL: http://evolution:8080
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - backend_uploads:/app/uploads
+
+  # ── Frontend (Next.js) ───────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: orbitask_frontend
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3333
+    depends_on:
+      - backend
+
+  # ── Nginx Reverse Proxy ──────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: orbitask_nginx
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  evolution_data:
+  backend_uploads:
+  nginx_logs:
+
+networks:
+  default:
+    name: orbitask_network
+

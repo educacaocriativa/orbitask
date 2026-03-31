@@ -1,0 +1,58 @@
+# ── Dependencies ───────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build outputs ───────────────────────────────────────
+dist/
+build/
+.next/
+out/
+
+# ── Environment files ───────────────────────────────────
+.env
+.env.local
+.env.*.local
+# Keep .env.example in source control
+!.env.example
+
+# ── Prisma ──────────────────────────────────────────────
+backend/prisma/migrations/dev.db
+*.db
+*.db-journal
+
+# ── Logs ────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# ── OS ──────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+
+# ── IDE ─────────────────────────────────────────────────
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ── TypeScript ──────────────────────────────────────────
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Docker / uploads ────────────────────────────────────
+backend/uploads/
+backups/
+nginx/ssl/*.pem
+
+# ── Misc ────────────────────────────────────────────────
+.turbo/
+.cache/
+coverage/
+.nyc_output/
+.env.local
+

@@ -1,0 +1,342 @@
+// ─────────────────────────────────────────────────────────
+//  ORBITASK — Prisma Schema (MySQL / AWS RDS Version)
+//  Space Project Management System
+// ─────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+//  ENUMS
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+enum NotificationType {
+  CARD_MOVED
+  MENTION
+  DEADLINE_EXPIRED
+  DEADLINE_WARNING
+  CARD_ASSIGNED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum FileType {
+  PDF
+  WORD
+  IMAGE
+  OTHER
+}
+
+// ─────────────────────────────────────────────
+//  USERS
+// ─────────────────────────────────────────────
+
+model User {
+  id              String   @id @default(uuid())
+  name            String
+  email           String   @unique
+  passwordHash    String   @map("password_hash")
+  phoneWhatsapp   String?  @map("phone_whatsapp")
+  avatarUrl       String?  @map("avatar_url")
+  role            UserRole @default(MEMBER)
+  isActive        Boolean  @default(true) @map("is_active")
+
+  // Admin dashboard tracking
+  lastAccessAt    DateTime? @map("last_access_at")
+  lastCommentAt   DateTime? @map("last_comment_at")
+  lastCommentText String?   @map("last_comment_text") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  ownedBoards       Board[]
+  boardMemberships  BoardMember[]
+  ownedColumns      Column[]            @relation("ColumnPrimaryOwner")
+  columnMemberships ColumnMember[]
+  createdCards      Card[]              @relation("CardCreator")
+  cardSections      CardSection[]       @relation("SectionOwner")
+  uploadedFiles     File[]
+  mentionedIn       Mention[]           @relation("MentionedUser")
+  mentionsMade      Mention[]           @relation("MentionedBy")
+  mentionReplies    Mention[]           @relation("MentionReplier")
+  accessLogs        AccessLog[]
+  notifications     NotificationQueue[] @relation("NotificationRecipient")
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+//  BOARDS
+// ─────────────────────────────────────────────
+
+model Board {
+  id          String  @id @default(uuid())
+  title       String
+  description String? @db.Text
+  color       String  @default("#6366f1")
+  isArchived  Boolean @default(false) @map("is_archived")
+
+  ownerId String @map("owner_id")
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  columns Column[]
+  cards   Card[]
+  members BoardMember[]
+
+  @@map("boards")
+}
+
+model BoardMember {
+  id      String @id @default(uuid())
+  boardId String @map("board_id")
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  userId  String @map("user_id")
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([boardId, userId])
+  @@map("board_members")
+}
+
+// ─────────────────────────────────────────────
+//  COLUMNS
+// ─────────────────────────────────────────────
+
+model Column {
+  id       String @id @default(uuid())
+  title    String
+  position Int
+  color    String @default("#818cf8")
+
+  ownerId String @map("owner_id")
+  owner   User   @relation("ColumnPrimaryOwner", fields: [ownerId], references: [id])
+
+  boardId String @map("board_id")
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  isArchived Boolean @default(false) @map("is_archived")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  columnMembers ColumnMember[]
+  cards         Card[]
+  cardSections  CardSection[]
+  notifications NotificationQueue[]
+
+  @@map("columns")
+}
+
+model ColumnMember {
+  id       String @id @default(uuid())
+  columnId String @map("column_id")
+  column   Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  userId   String @map("user_id")
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([columnId, userId])
+  @@map("column_members")
+}
+
+// ─────────────────────────────────────────────
+//  CARDS
+// ─────────────────────────────────────────────
+
+model Card {
+  id          String  @id @default(uuid())
+  title       String
+  description String? @db.Text
+  position    Int
+  priority    String  @default("MEDIUM") 
+  
+  // MySQL não suporta String[], usamos Json para as tags
+  tags        Json?
+
+  deadline    DateTime?
+  deadlineAt  DateTime? @map("deadline_at")
+  isOverdue   Boolean   @default(false) @map("is_overdue")
+
+  requiresDeadlineToMove Boolean @default(true) @map("requires_deadline_to_move")
+  lastMovedByUserId      String? @map("last_moved_by_user_id")
+
+  currentColumnId String @map("current_column_id")
+  currentColumn   Column @relation(fields: [currentColumnId], references: [id])
+
+  boardId String @map("board_id")
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  creatorId String @map("creator_id")
+  creator   User   @relation("CardCreator", fields: [creatorId], references: [id])
+
+  isArchived            Boolean   @default(false) @map("is_archived")
+  archivedFromColumnId  String?   @map("archived_from_column_id")
+  archivedFromPosition  Int?      @map("archived_from_position")
+  archivedAt            DateTime? @map("archived_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sections      CardSection[]
+  notifications NotificationQueue[]
+
+  @@map("cards")
+}
+
+// ─────────────────────────────────────────────
+//  CARD SECTIONS
+// ─────────────────────────────────────────────
+
+model CardSection {
+  id      String @id @default(uuid())
+  content Json?
+
+  cardId String @map("card_id")
+  card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  columnId String @map("column_id")
+  column   Column @relation(fields: [columnId], references: [id])
+
+  ownerId String @map("owner_id")
+  owner   User   @relation("SectionOwner", fields: [ownerId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  files    File[]
+  mentions Mention[]
+
+  @@unique([cardId, columnId])
+  @@map("card_sections")
+}
+
+// ─────────────────────────────────────────────
+//  FILES
+// ─────────────────────────────────────────────
+
+model File {
+  id           String   @id @default(uuid())
+  originalName String   @map("original_name")
+  storagePath  String   @map("storage_path")
+  mimeType     String   @map("mime_type")
+  fileType     FileType @map("file_type")
+  sizeBytes    Int      @map("size_bytes")
+  url          String?
+
+  cardSectionId String      @map("card_section_id")
+  cardSection   CardSection @relation(fields: [cardSectionId], references: [id], onDelete: Cascade)
+
+  uploadedById String @map("uploaded_by_id")
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("files")
+}
+
+// ─────────────────────────────────────────────
+//  MENTIONS
+// ─────────────────────────────────────────────
+
+model Mention {
+  id String @id @default(uuid())
+
+  cardSectionId String      @map("card_section_id")
+  cardSection   CardSection @relation(fields: [cardSectionId], references: [id], onDelete: Cascade)
+
+  mentionedUserId String @map("mentioned_user_id")
+  mentionedUser   User   @relation("MentionedUser", fields: [mentionedUserId], references: [id])
+
+  mentionedById String @map("mentioned_by_id")
+  mentionedBy   User   @relation("MentionedBy", fields: [mentionedById], references: [id])
+
+  whatsappSent   Boolean   @default(false) @map("whatsapp_sent")
+  whatsappSentAt DateTime? @map("whatsapp_sent_at")
+
+  reply        String?   @db.Text
+  replyContent Json?     @map("reply_content")
+  repliedAt    DateTime? @map("replied_at")
+  repliedById  String?   @map("replied_by_id")
+  repliedBy    User?     @relation("MentionReplier", fields: [repliedById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("mentions")
+}
+
+// ─────────────────────────────────────────────
+//  NOTIFICATION QUEUE
+// ─────────────────────────────────────────────
+
+model NotificationQueue {
+  id String @id @default(uuid())
+
+  type    NotificationType
+  status  NotificationStatus @default(PENDING)
+  payload Json
+
+  cardId String? @map("card_id")
+  card   Card?   @relation(fields: [cardId], references: [id], onDelete: SetNull)
+
+  columnId String? @map("column_id")
+  column   Column? @relation(fields: [columnId], references: [id], onDelete: SetNull)
+
+  recipientId String @map("recipient_id")
+  recipient   User   @relation("NotificationRecipient", fields: [recipientId], references: [id])
+
+  scheduledFor DateTime  @map("scheduled_for")
+  sentAt       DateTime? @map("sent_at")
+  retryCount   Int       @default(0) @map("retry_count")
+  lastError    String?   @map("last_error") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status, scheduledFor])
+  @@index([recipientId])
+  @@map("notification_queue")
+}
+
+// ─────────────────────────────────────────────
+//  ACCESS LOGS
+// ─────────────────────────────────────────────
+
+model AccessLog {
+  id        String  @id @default(uuid())
+  action    String
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent") @db.Text
+  metadata  Json?
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("access_logs")
+}

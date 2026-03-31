@@ -1,0 +1,170 @@
+{
+  "folders": [
+    {
+      "name": "🚀 Orbitask",
+      "path": "."
+    },
+    {
+      "name": "⚙️  Backend",
+      "path": "backend"
+    },
+    {
+      "name": "🎨 Frontend",
+      "path": "frontend"
+    }
+  ],
+  "settings": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.tabSize": 2,
+    "editor.rulers": [100],
+    "editor.bracketPairColorization.enabled": true,
+    "editor.guides.bracketPairs": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.eslint": "explicit"
+    },
+    "typescript.tsdk": "frontend/node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+    "[typescript]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[prisma]": {
+      "editor.defaultFormatter": "Prisma.prisma"
+    },
+    "files.associations": {
+      "*.env*": "dotenv",
+      "docker-compose*.yml": "dockercompose"
+    },
+    "files.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/dist": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.next": true,
+      "**/dist": true
+    },
+    "tailwindCSS.experimental.classRegex": [
+      ["cn\\(([^)]*)\\)", "(?:'|\"|`)([^']*)(?:'|\"|`)"],
+      ["cva\\(([^)]*)\\)", "[\"'`]([^\"'`]*).*?[\"'`]"]
+    ],
+    "tailwindCSS.includeLanguages": {
+      "typescript": "javascript",
+      "typescriptreact": "javascript"
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "esbenp.prettier-vscode",
+      "dbaeumer.vscode-eslint",
+      "Prisma.prisma",
+      "bradlc.vscode-tailwindcss",
+      "ms-vscode.vscode-typescript-next",
+      "christian-kohler.path-intellisense",
+      "mikestead.dotenv",
+      "ms-azuretools.vscode-docker",
+      "PKief.material-icon-theme",
+      "eamodio.gitlens",
+      "usernamehw.errorlens",
+      "antfu.iconify"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "🚀 Backend (dev)",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "npx",
+        "runtimeArgs": ["tsx", "watch", "src/server.ts"],
+        "cwd": "${workspaceFolder}/backend",
+        "console": "integratedTerminal",
+        "env": {
+          "NODE_ENV": "development"
+        }
+      },
+      {
+        "name": "🎨 Frontend (dev)",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "npx",
+        "runtimeArgs": ["next", "dev"],
+        "cwd": "${workspaceFolder}/frontend",
+        "console": "integratedTerminal",
+        "env": {
+          "NODE_ENV": "development"
+        }
+      },
+      {
+        "name": "🗄️  Prisma Studio",
+        "type": "node",
+        "request": "launch",
+        "runtimeExecutable": "npx",
+        "runtimeArgs": ["prisma", "studio"],
+        "cwd": "${workspaceFolder}/backend",
+        "console": "integratedTerminal"
+      }
+    ],
+    "compounds": [
+      {
+        "name": "🛸 Full Stack",
+        "configurations": ["🚀 Backend (dev)", "🎨 Frontend (dev)"],
+        "stopAll": true
+      }
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "🐳 Start Infrastructure",
+        "type": "shell",
+        "command": "docker compose up postgres redis minio -d",
+        "options": { "cwd": "${workspaceFolder}" },
+        "group": "build",
+        "presentation": { "reveal": "always", "panel": "new" }
+      },
+      {
+        "label": "🐳 Start All Services",
+        "type": "shell",
+        "command": "docker compose up -d",
+        "options": { "cwd": "${workspaceFolder}" },
+        "group": "build"
+      },
+      {
+        "label": "🗄️  DB Migrate",
+        "type": "shell",
+        "command": "npm run db:migrate",
+        "options": { "cwd": "${workspaceFolder}/backend" },
+        "group": "build"
+      },
+      {
+        "label": "🌱 DB Seed",
+        "type": "shell",
+        "command": "npm run db:seed",
+        "options": { "cwd": "${workspaceFolder}/backend" },
+        "group": "build"
+      },
+      {
+        "label": "📦 Install All",
+        "type": "shell",
+        "command": "cd backend && npm install && cd ../frontend && npm install",
+        "options": { "cwd": "${workspaceFolder}" },
+        "group": "build"
+      },
+      {
+        "label": "🔍 Health Check",
+        "type": "shell",
+        "command": "bash scripts/health-check.sh",
+        "options": { "cwd": "${workspaceFolder}" },
+        "group": "test"
+      }
+    ]
+  }
+}
+
