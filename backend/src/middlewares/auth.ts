@@ -27,7 +27,7 @@ export async function authenticate(
     await request.jwtVerify()
 
     // Attach full user info
-    const payload = request.user
+    const payload = request.user as unknown as { sub: string; name: string; email: string; role: string }
     request.user = {
       id: payload.sub,
       name: payload.name,

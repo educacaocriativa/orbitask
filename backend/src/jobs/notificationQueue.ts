@@ -94,10 +94,7 @@ export function startDeadlineCron() {
             cardId: card.id,
             columnId: card.currentColumn.id,
             scheduledFor: new Date(),
-            payload: {
-              retryCount: 0,
-              isColumnOwner: true,
-            },
+            payload: JSON.parse(JSON.stringify({ retryCount: 0, isColumnOwner: true })),
           },
         })
         await enqueueNotification('DEADLINE_EXPIRED', ownerNotification.id)
@@ -115,10 +112,7 @@ export function startDeadlineCron() {
             cardId: card.id,
             columnId: card.currentColumn.id,
             scheduledFor: new Date(),
-            payload: {
-              retryCount: 0,
-              isCreator: true,
-            },
+            payload: JSON.parse(JSON.stringify({ retryCount: 0, isCreator: true })),
           },
         })
         await enqueueNotification('DEADLINE_EXPIRED', creatorNotification.id)
@@ -156,7 +150,7 @@ export function startDeadlineCron() {
             cardId: card.id,
             columnId: card.currentColumnId,
             scheduledFor: new Date(),
-            payload: { retryCount: 1, isRepeatedAlert: true },
+            payload: JSON.parse(JSON.stringify({ retryCount: 1, isRepeatedAlert: true })),
           },
         })
         await enqueueNotification('DEADLINE_EXPIRED', notification.id)

@@ -325,12 +325,12 @@ async function processMentions(params: {
           recipientId: user.id,
           cardId: params.card.id,
           scheduledFor: new Date(),
-          payload: {
+          payload: JSON.parse(JSON.stringify({
             mentionId: mention.id,
             mentionedByName: params.mentionedByName,
             cardTitle: params.card.title,
             boardTitle: params.card.board.title,
-          },
+          })),
         },
       })
 

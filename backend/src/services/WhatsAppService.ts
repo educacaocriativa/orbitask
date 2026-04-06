@@ -212,9 +212,9 @@ export class WhatsAppService {
       where: { id: notificationId },
       data: {
         status: success ? 'SENT' : 'FAILED',
-        sentAt: success ? new Date() : null,
+        sentAt: success ? new Date() : undefined,
         retryCount: { increment: success ? 0 : 1 },
-      },
+      } as any,
     })
 
     return success

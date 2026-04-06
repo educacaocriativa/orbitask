@@ -108,7 +108,7 @@ export async function cardRoutes(app: FastifyInstance) {
       tags?: string[]; deadline?: string | null
     }
 
-    const updateData: Record<string, unknown> = { ...body }
+    const updateData: any = { ...body }
 
     if ('deadline' in body) {
       updateData.deadline = body.deadline ? new Date(body.deadline) : null
@@ -276,12 +276,12 @@ export async function cardRoutes(app: FastifyInstance) {
           cardId: id,
           columnId: targetColumnId,
           scheduledFor: new Date(),
-          payload: {
+          payload: JSON.parse(JSON.stringify({
             fromColumn: fromColumnTitle,
             toColumn: targetColumn.title,
             movedBy: request.user.name,
             deadline: new Date(deadline).toISOString(),
-          },
+          })),
         },
       })
       await enqueueNotification(NotificationType.CARD_MOVED, notification.id)

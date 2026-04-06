@@ -22,9 +22,8 @@ export async function searchRoutes(app: FastifyInstance) {
               isArchived: false,
               ...(boardId ? { boardId } : {}),
               OR: [
-                { title:       { contains: term, mode: 'insensitive' } },
-                { description: { contains: term, mode: 'insensitive' } },
-                { tags:        { has: term.toLowerCase() } },
+                { title:       { contains: term } },
+                { description: { contains: term } },
               ],
             },
             include: {
@@ -42,8 +41,8 @@ export async function searchRoutes(app: FastifyInstance) {
             where: {
               isArchived: false,
               OR: [
-                { title:       { contains: term, mode: 'insensitive' } },
-                { description: { contains: term, mode: 'insensitive' } },
+                { title:       { contains: term } },
+                { description: { contains: term } },
               ],
             },
             include: {
@@ -74,7 +73,7 @@ export async function searchRoutes(app: FastifyInstance) {
         ...(isOverdue  && { isOverdue: isOverdue === 'true' }),
         ...(creatorId  && { creatorId }),
         ...(columnId   && { currentColumnId: columnId }),
-        ...(tag        && { tags: { has: tag } }),
+        ...(tag        && { tags: { string_contains: tag } as any }),
         ...(deadlineFrom || deadlineTo ? {
           deadline: {
             ...(deadlineFrom && { gte: new Date(deadlineFrom) }),
