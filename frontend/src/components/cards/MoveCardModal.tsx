@@ -13,21 +13,16 @@ interface MoveCardModalProps {
 }
 
 export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board }: MoveCardModalProps) {
-  const [deadline, setDeadline] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
   const targetColumn = board?.columns.find((c) => c.id === targetColumnId)
 
-  // Default: 3 days from now
-  const defaultDeadline = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 16)
-
   async function handleConfirm() {
-    if (!deadline) return
     setIsLoading(true)
     try {
-      await onConfirm(new Date(deadline).toISOString())
+      // Deadline automático: 24 horas a partir de agora
+      const deadline24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      await onConfirm(deadline24h)
     } finally {
       setIsLoading(false)
     }
@@ -63,14 +58,14 @@ export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board
                 className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
                 style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)' }}
               >
-                🔒
+                🚀
               </div>
               <div>
                 <h3 className="font-display text-sm font-semibold tracking-wider text-white">
-                  TRAVA DE MOVIMENTAÇÃO
+                  CONFIRMAR MOVIMENTAÇÃO
                 </h3>
                 <p className="text-xs text-white/40 font-body mt-0.5">
-                  Defina o prazo para avançar
+                  O responsável terá 24h para avançar
                 </p>
               </div>
             </div>
@@ -98,27 +93,20 @@ export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board
               </div>
             )}
 
-            {/* Deadline picker */}
-            <div className="mb-5">
-              <label className="block text-xs font-display font-medium text-white/50 uppercase tracking-widest mb-2">
-                ⏰ Prazo desta etapa
-              </label>
-              <input
-                type="datetime-local"
-                value={deadline || defaultDeadline}
-                min={new Date().toISOString().slice(0, 16)}
-                onChange={(e) => setDeadline(e.target.value)}
-                className={cn(
-                  'w-full px-4 py-3 rounded-xl text-sm font-body',
-                  'bg-white/5 border border-white/10 text-white',
-                  'focus:outline-none focus:border-neon-amber/50',
-                  'transition-all duration-200',
-                  '[color-scheme:dark]',
-                )}
-              />
-              <p className="text-[11px] text-white/30 font-body mt-1.5">
-                O dono da coluna será notificado via WhatsApp 🛸
-              </p>
+            {/* 24h info */}
+            <div
+              className="flex items-center gap-3 px-3 py-3 rounded-xl mb-5"
+              style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}
+            >
+              <span className="text-lg">⏱</span>
+              <div>
+                <p className="text-xs font-display font-semibold text-amber-300">
+                  Prazo automático: 24 horas
+                </p>
+                <p className="text-[11px] text-white/35 font-body mt-0.5">
+                  O dono da etapa será notificado via WhatsApp 🛸
+                </p>
+              </div>
             </div>
 
             {/* Actions */}
