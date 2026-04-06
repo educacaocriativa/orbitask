@@ -44,6 +44,8 @@ export class WhatsAppService {
     recipientPhone: string
     recipientName: string
     cardTitle: string
+    cardId: string
+    boardId: string
     fromColumn: string
     toColumn: string
     movedBy: string
@@ -53,6 +55,8 @@ export class WhatsAppService {
     const deadlineText = params.deadline
       ? `\n⏰ *Prazo:* ${params.deadline.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
       : ''
+
+    const cardLink = `${env.FRONTEND_URL}/board/${params.boardId}?card=${params.cardId}`
 
     const message = [
       `🚀 *Orbitask — Card Movido*`,
@@ -67,7 +71,31 @@ export class WhatsAppService {
       `👤 *Movido por:* ${params.movedBy}`,
       deadlineText,
       ``,
-      `Acesse o Orbitask para ver os detalhes.`,
+      `🔗 Abrir card: ${cardLink}`,
+    ].join('\n')
+
+    return this.sendMessage({ phone: params.recipientPhone, message })
+  }
+
+  async notifyAnnouncement(params: {
+    recipientPhone: string
+    recipientName: string
+    title: string
+    content: string
+    sentBy: string
+  }) {
+    const message = [
+      `📢 *Orbitask — Novo Comunicado*`,
+      ``,
+      `Olá, ${params.recipientName}!`,
+      ``,
+      `*${params.sentBy}* enviou um novo comunicado.`,
+      ``,
+      `📌 *${params.title}*`,
+      ``,
+      `${params.content.substring(0, 200)}${params.content.length > 200 ? '...' : ''}`,
+      ``,
+      `🔗 Acesse: ${env.FRONTEND_URL}`,
     ].join('\n')
 
     return this.sendMessage({ phone: params.recipientPhone, message })
@@ -106,6 +134,8 @@ export class WhatsAppService {
     columnTitle: string
     expiredAt: Date
     isRepeatedAlert?: boolean
+    cardId?: string
+    boardId?: string
   }) {
     const expiredText = params.expiredAt.toLocaleDateString('pt-BR', {
       day: '2-digit', month: '2-digit', year: 'numeric',
@@ -113,6 +143,10 @@ export class WhatsAppService {
     })
 
     const alertTag = params.isRepeatedAlert ? '🔴 *ALERTA REPETIDO*\n' : ''
+
+    const cardLink = params.cardId && params.boardId
+      ? `\n🔗 Abrir card: ${env.FRONTEND_URL}/board/${params.boardId}?card=${params.cardId}`
+      : `\n🔗 Acesse: ${env.FRONTEND_URL}`
 
     const message = [
       `⚠️ *Orbitask — Prazo Expirado*`,
@@ -125,8 +159,7 @@ export class WhatsAppService {
       `📋 *Board:* ${params.boardTitle}`,
       `📂 *Coluna:* ${params.columnTitle}`,
       `⏰ *Expirou em:* ${expiredText}`,
-      ``,
-      `⚡ Acesse o Orbitask e atualize o status imediatamente.`,
+      cardLink,
     ].join('\n')
 
     return this.sendMessage({ phone: params.recipientPhone, message })
@@ -183,6 +216,8 @@ export class WhatsAppService {
           recipientPhone: notification.recipient.phoneWhatsapp,
           recipientName: notification.recipient.name,
           cardTitle: notification.card?.title ?? '',
+          cardId: notification.card?.id ?? '',
+          boardId: notification.card?.board?.id ?? '',
           fromColumn: payload.fromColumn as string,
           toColumn: notification.column?.title ?? '',
           movedBy: payload.movedBy as string,
@@ -200,6 +235,8 @@ export class WhatsAppService {
           columnTitle: notification.card?.currentColumn?.title ?? '',
           expiredAt: notification.card?.deadline ?? new Date(),
           isRepeatedAlert: (payload.retryCount as number) > 0,
+          cardId: notification.card?.id,
+          boardId: notification.card?.board?.id,
         })
         break
 

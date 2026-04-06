@@ -2,6 +2,9 @@ import type { FastifyInstance } from 'fastify'
 import { prisma } from '../database/prisma'
 import { authenticate } from '../middlewares/auth'
 import { AppError } from '../utils/AppError'
+import { WhatsAppService } from '../services/WhatsAppService'
+
+const whatsapp = new WhatsAppService()
 
 export async function announcementRoutes(app: FastifyInstance) {
 
@@ -30,6 +33,62 @@ export async function announcementRoutes(app: FastifyInstance) {
         createdById: request.user.id,
       },
       include: { createdBy: { select: { id: true, name: true, avatarUrl: true } } },
+    })
+
+    // ── Send WhatsApp notifications to targeted users ───────
+    setImmediate(async () => {
+      try {
+        let recipients: { phoneWhatsapp: string | null; name: string }[] = []
+
+        if (targetType === 'ALL') {
+          recipients = await prisma.user.findMany({
+            where: { isActive: true, phoneWhatsapp: { not: null } },
+            select: { phoneWhatsapp: true, name: true },
+          })
+        } else if (targetType === 'USER' && targetId) {
+          const user = await prisma.user.findUnique({
+            where: { id: targetId },
+            select: { phoneWhatsapp: true, name: true },
+          })
+          if (user) recipients = [user]
+        } else if (targetType === 'BOARD' && targetId) {
+          const members = await prisma.boardMember.findMany({
+            where: { boardId: targetId },
+            include: { user: { select: { phoneWhatsapp: true, name: true } } },
+          })
+          recipients = members.map((m) => m.user)
+        } else if (targetType === 'CARD' && targetId) {
+          const card = await prisma.card.findUnique({
+            where: { id: targetId },
+            include: {
+              currentColumn: {
+                include: {
+                  owner: { select: { phoneWhatsapp: true, name: true } },
+                  columnMembers: { include: { user: { select: { phoneWhatsapp: true, name: true } } } },
+                },
+              },
+            },
+          })
+          if (card?.currentColumn) {
+            const col = card.currentColumn
+            if (col.owner) recipients.push(col.owner)
+            recipients.push(...col.columnMembers.map((m) => m.user))
+          }
+        }
+
+        for (const r of recipients) {
+          if (!r.phoneWhatsapp) continue
+          await whatsapp.notifyAnnouncement({
+            recipientPhone: r.phoneWhatsapp,
+            recipientName: r.name,
+            title,
+            content,
+            sentBy: announcement.createdBy.name,
+          })
+        }
+      } catch (err) {
+        console.error('WhatsApp announcement notification error:', err)
+      }
     })
 
     return reply.status(201).send({ announcement })

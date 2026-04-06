@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { useBoardStore } from '@/stores/boardStore'
 import { useBoardSocket } from '@/hooks/useBoardSocket'
@@ -16,11 +16,12 @@ import { ColumnSkeleton } from '@/components/ui/Skeletons'
 import { cn } from '@/lib/utils'
 
 export default function BoardPage() {
-  const params  = useParams()
-  const router  = useRouter()
-  const boardId = params.id as string
+  const params       = useParams()
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const boardId      = params.id as string
 
-  const { board, isLoading, fetchBoard, archiveCard } = useBoardStore()
+  const { board, isLoading, fetchBoard, archiveCard, setOpenCard } = useBoardStore()
   const { broadcast } = useBoardSocket(boardId)
 
   const currentUser = useAuthStore((s) => s.user)
@@ -38,6 +39,12 @@ export default function BoardPage() {
   })
 
   useEffect(() => { if (boardId) fetchBoard(boardId) }, [boardId])
+
+  // Auto-open card from ?card= query param
+  useEffect(() => {
+    const cardId = searchParams.get('card')
+    if (cardId && board) setOpenCard(cardId)
+  }, [board, searchParams])
 
   async function handleArchive(cardId: string) {
     try {
