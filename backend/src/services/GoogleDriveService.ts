@@ -1,6 +1,15 @@
 import { google } from 'googleapis'
 import { env } from '../config/env'
 
+// Handles keys pasted from JSON with surrounding quotes or escaped \n
+function sanitizePrivateKey(key: string): string {
+  let k = key.trim()
+  // Strip surrounding JSON quotes if present: "-----BEGIN..."
+  if (k.startsWith('"') && k.endsWith('"')) k = k.slice(1, -1)
+  // Replace literal \n sequences with actual newlines
+  return k.replace(/\\n/g, '\n')
+}
+
 // ── Auth client (singleton) ──────────────────────────────
 function getDriveClient() {
   if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || !env.GOOGLE_SHARED_DRIVE_ID) {
@@ -10,7 +19,7 @@ function getDriveClient() {
   const auth = new google.auth.GoogleAuth({
     credentials: {
       client_email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      private_key: sanitizePrivateKey(env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY!),
     },
     scopes: ['https://www.googleapis.com/auth/drive'],
   })
