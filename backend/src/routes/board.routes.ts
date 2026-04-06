@@ -2,6 +2,9 @@ import type { FastifyInstance } from 'fastify'
 import { prisma } from '../database/prisma'
 import { authenticate } from '../middlewares/auth'
 import { AppError } from '../utils/AppError'
+import { WhatsAppService } from '../services/WhatsAppService'
+
+const whatsapp = new WhatsAppService()
 
 const BOARD_MEMBERS_INCLUDE = {
   select: { id: true, userId: true, role: true, user: { select: { id: true, name: true, avatarUrl: true, email: true } } },
@@ -201,6 +204,18 @@ export async function boardRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const body = request.body as { title?: string; ownerId?: string; ownerIds?: string[]; color?: string }
 
+    // Fetch current column to detect owner change
+    const prevColumn = await prisma.column.findUnique({
+      where: { id },
+      select: {
+        ownerId: true,
+        title: true,
+        boardId: true,
+        board: { select: { title: true } },
+        columnMembers: { select: { userId: true } },
+      },
+    })
+
     const { ownerIds, ...rest } = body
 
     const column = await prisma.column.update({
@@ -216,9 +231,32 @@ export async function boardRoutes(app: FastifyInstance) {
       },
       include: {
         owner: { select: { id: true, name: true, avatarUrl: true } },
-        columnMembers: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
+        columnMembers: { include: { user: { select: { id: true, name: true, avatarUrl: true, phoneWhatsapp: true } } } },
       },
     })
+
+    // ── Notify new members added to the column ──────────────
+    if (prevColumn && ownerIds && ownerIds.length > 0) {
+      const prevMemberIds = new Set(prevColumn.columnMembers.map((m) => m.userId))
+      const newMembers = column.columnMembers.filter((m) => !prevMemberIds.has(m.user.id))
+
+      setImmediate(async () => {
+        for (const m of newMembers) {
+          if (!m.user.phoneWhatsapp) continue
+          try {
+            await whatsapp.notifyAnnouncement({
+              recipientPhone: m.user.phoneWhatsapp,
+              recipientName: m.user.name,
+              title: `Você foi adicionado à etapa "${column.title}"`,
+              content: `Você agora faz parte da etapa *"${column.title}"* no board *"${prevColumn.board.title}"*.\n\nCards movidos para essa etapa aparecerão no seu painel de tarefas.`,
+              sentBy: request.user.name,
+            })
+          } catch (err) {
+            console.error('WhatsApp column member notify error:', err)
+          }
+        }
+      })
+    }
 
     return reply.send({ column })
   })
