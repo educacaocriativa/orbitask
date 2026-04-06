@@ -77,6 +77,25 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ user })
   })
 
+  // ── PATCH /admin/users/:id ───────────────────────────────
+  app.patch('/admin/users/:id', {
+    preHandler: [isAdmin],
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const body = request.body as { name?: string; phoneWhatsapp?: string | null }
+
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        ...(body.name !== undefined && { name: body.name }),
+        phoneWhatsapp: body.phoneWhatsapp ?? null,
+      },
+      select: { id: true, name: true, email: true, role: true, isActive: true, phoneWhatsapp: true, avatarUrl: true },
+    })
+
+    return reply.send({ user })
+  })
+
   // ── GET /admin/logs ──────────────────────────────────────
   app.get('/admin/logs', {
     preHandler: [isAdmin],
