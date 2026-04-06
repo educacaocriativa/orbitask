@@ -60,13 +60,17 @@ export async function buildApp() {
     services: { database: 'connected', redis: 'connected', minio: 'connected' },
   }))
 
-  app.get('/health/drive', async () => ({
-    configured: googleDrive.isConfigured,
-    sharedDriveId: env.GOOGLE_SHARED_DRIVE_ID ?? null,
-    serviceAccountEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? null,
-    hasPrivateKey: !!(env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY),
-    privateKeyStart: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.substring(0, 40) ?? null,
-  }))
+  app.get('/health/drive', async () => {
+    const testResult = await googleDrive.testConnection()
+    return {
+      configured: googleDrive.isConfigured,
+      sharedDriveId: env.GOOGLE_SHARED_DRIVE_ID ?? null,
+      serviceAccountEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? null,
+      hasPrivateKey: !!(env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY),
+      privateKeyStart: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.substring(0, 40) ?? null,
+      connectionTest: testResult,
+    }
+  })
 
   app.setErrorHandler((error, _req, reply) => {
     if (error instanceof AppError) return reply.status(error.statusCode).send({ error: error.message, statusCode: error.statusCode })

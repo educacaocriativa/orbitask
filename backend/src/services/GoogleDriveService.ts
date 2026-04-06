@@ -101,6 +101,24 @@ export class GoogleDriveService {
   async shareFolderWithMany(folderId: string, emails: string[]): Promise<void> {
     await Promise.allSettled(emails.map((e) => this.shareFolder(folderId, e)))
   }
+
+  // ── Test connection by listing Shared Drive ───────────────
+  async testConnection(): Promise<{ ok: boolean; error?: string; details?: unknown }> {
+    if (!this.drive) return { ok: false, error: 'Not configured' }
+    try {
+      await this.drive.drives.get({
+        driveId: this.sharedDriveId,
+        fields: 'id, name',
+      })
+      return { ok: true }
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message ?? String(err),
+        details: err?.response?.data ?? null,
+      }
+    }
+  }
 }
 
 export const googleDrive = new GoogleDriveService()
