@@ -76,7 +76,7 @@ export async function websocketRoutes(app: FastifyInstance) {
     }, socket)
 
     // Handle incoming messages (client → server)
-    socket.on('message', (raw) => {
+    socket.on('message', (raw: Buffer) => {
       try {
         const event = JSON.parse(raw.toString()) as WsEvent
         // Echo validated events to room (server as message relay)
