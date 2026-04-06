@@ -213,7 +213,7 @@ function UserFormModal({ open, onClose, onSave, editUser }: {
         await Promise.all([
           api.patch(`/admin/users/${editUser!.id}/role`,   { role }),
           api.patch(`/admin/users/${editUser!.id}/status`, { isActive: active }),
-          api.patch(`/admin/users/${editUser!.id}`,        { name: name.trim(), phoneWhatsapp: phone.trim() || null }),
+          api.patch(`/admin/users/${editUser!.id}/profile`,  { name: name.trim(), phoneWhatsapp: phone.trim() || null }),
         ])
         toast.success('Usuário atualizado ✅')
         onSave({ ...editUser!, name, role, isActive: active, phoneWhatsapp: phone.trim() || undefined })

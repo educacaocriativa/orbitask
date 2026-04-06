@@ -77,8 +77,8 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ user })
   })
 
-  // ── PATCH /admin/users/:id ───────────────────────────────
-  app.patch('/admin/users/:id', {
+  // ── PATCH /admin/users/:id/profile ──────────────────────
+  app.patch('/admin/users/:id/profile', {
     preHandler: [isAdmin],
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
