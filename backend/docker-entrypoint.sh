@@ -21,5 +21,9 @@ if [ $i -eq 20 ]; then
   echo "AVISO: Redis nao respondeu em 20s, continuando mesmo assim..."
 fi
 
+# Sincroniza schema com o banco de dados
+echo "Running prisma db push..."
+npx prisma db push --skip-generate --accept-data-loss || echo "AVISO: prisma db push falhou, continuando..."
+
 # Inicia a aplicação
 exec node dist/server.js
