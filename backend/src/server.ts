@@ -24,6 +24,7 @@ import { websocketRoutes } from './websocket/boardSocket'
 
 import { AppError }          from './utils/AppError'
 import { startDeadlineCron } from './jobs/notificationQueue'
+import { googleDrive }       from './services/GoogleDriveService'
 
 export async function buildApp() {
   const app = Fastify({
@@ -57,6 +58,14 @@ export async function buildApp() {
   app.get('/health', async () => ({
     status: 'ok', environment: env.NODE_ENV, timestamp: new Date().toISOString(),
     services: { database: 'connected', redis: 'connected', minio: 'connected' },
+  }))
+
+  app.get('/health/drive', async () => ({
+    configured: googleDrive.isConfigured,
+    sharedDriveId: env.GOOGLE_SHARED_DRIVE_ID ?? null,
+    serviceAccountEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? null,
+    hasPrivateKey: !!(env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY),
+    privateKeyStart: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.substring(0, 40) ?? null,
   }))
 
   app.setErrorHandler((error, _req, reply) => {
