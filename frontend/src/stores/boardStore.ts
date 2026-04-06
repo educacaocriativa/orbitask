@@ -24,6 +24,7 @@ export interface Card {
   deadline?: string; isOverdue: boolean
   currentColumnId: string
   lastMovedByUserId?: string | null
+  columnEnteredAt?: string | null
   creator: User
   _count?: { sections: number }
   pendingMentionCount?: number
@@ -43,6 +44,7 @@ export interface Column {
 
 export interface BoardMember {
   id: string; userId: string
+  role: 'COORDINATOR' | 'MEMBER'
   user: User & { email?: string }
 }
 
@@ -65,6 +67,7 @@ interface BoardState {
   archiveCard: (cardId: string) => Promise<void>
   restoreCard: (cardId: string) => Promise<void>
   fetchArchivedCards: (boardId: string) => Promise<Card[]>
+  fetchOverdueCards: (boardId: string) => Promise<Card[]>
   setActiveCard: (card: Card | null) => void
   setOpenCard: (id: string | null) => void
 
@@ -182,6 +185,11 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
 
   fetchArchivedCards: async (boardId) => {
     const { data } = await api.get(`/boards/${boardId}/archived-cards`)
+    return data.cards as Card[]
+  },
+
+  fetchOverdueCards: async (boardId) => {
+    const { data } = await api.get(`/boards/${boardId}/overdue-cards`)
     return data.cards as Card[]
   },
 

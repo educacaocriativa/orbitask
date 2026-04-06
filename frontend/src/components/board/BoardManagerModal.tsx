@@ -12,7 +12,10 @@ interface BoardManagerProps {
   open: boolean
   onClose: () => void
   /** undefined = create mode, object = edit mode */
-  editBoard?: { id: string; title: string; color: string; description?: string; memberIds: string[] } | null
+  editBoard?: {
+    id: string; title: string; color: string; description?: string
+    memberIds: string[]; coordinatorIds?: string[]
+  } | null
   onSaved?: (board: any) => void
 }
 
@@ -28,14 +31,15 @@ const COLORS = [
 ]
 
 export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardManagerProps) {
-  const [title,       setTitle]       = useState('')
-  const [description, setDescription] = useState('')
-  const [color,       setColor]       = useState('#7c3aed')
-  const [members,     setMembers]     = useState<ApiUser[]>([])
-  const [allUsers,    setAllUsers]    = useState<ApiUser[]>([])
-  const [search,      setSearch]      = useState('')
-  const [loading,     setLoading]     = useState(false)
-  const [populated,   setPopulated]   = useState(false)
+  const [title,          setTitle]          = useState('')
+  const [description,    setDescription]    = useState('')
+  const [color,          setColor]          = useState('#7c3aed')
+  const [members,        setMembers]        = useState<ApiUser[]>([])
+  const [coordinatorIds, setCoordinatorIds] = useState<Set<string>>(new Set())
+  const [allUsers,       setAllUsers]       = useState<ApiUser[]>([])
+  const [search,         setSearch]         = useState('')
+  const [loading,        setLoading]        = useState(false)
+  const [populated,      setPopulated]      = useState(false)
 
   // Reset on open
   useEffect(() => {
@@ -46,8 +50,9 @@ export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardMa
       setTitle(editBoard.title)
       setDescription(editBoard.description ?? '')
       setColor(editBoard.color)
+      setCoordinatorIds(new Set(editBoard.coordinatorIds ?? []))
     } else {
-      setTitle(''); setDescription(''); setColor('#7c3aed'); setMembers([])
+      setTitle(''); setDescription(''); setColor('#7c3aed'); setMembers([]); setCoordinatorIds(new Set())
     }
   }, [open])
 
@@ -75,6 +80,15 @@ export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardMa
 
   function removeMember(userId: string) {
     setMembers((m) => m.filter((x) => x.id !== userId))
+    setCoordinatorIds((prev) => { const n = new Set(prev); n.delete(userId); return n })
+  }
+
+  function toggleCoordinator(userId: string) {
+    setCoordinatorIds((prev) => {
+      const n = new Set(prev)
+      n.has(userId) ? n.delete(userId) : n.add(userId)
+      return n
+    })
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -87,6 +101,7 @@ export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardMa
       description: description.trim() || undefined,
       color,
       memberIds: members.map((m) => m.id),
+      coordinatorIds: [...coordinatorIds],
     }
 
     try {
@@ -189,18 +204,42 @@ export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardMa
 
                 {/* Selected members */}
                 {members.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-3">
-                    {members.map((m) => (
-                      <div key={m.id}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border bg-white/8 border-white/18 text-xs font-body font-semibold text-white/80">
-                        <Avatar name={m.name} size="xs" />
-                        <span className="truncate max-w-[100px]">{m.name.split(' ')[0]}</span>
-                        <button type="button" onClick={() => removeMember(m.id)}
-                          className="text-white/35 hover:text-red-400 transition-colors ml-0.5">
-                          ✕
-                        </button>
-                      </div>
-                    ))}
+                  <div className="space-y-1 mb-3">
+                    <p className="text-[11px] text-white/35 font-body mb-1.5">
+                      Clique em ★ para tornar coordenador da missão
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {members.map((m) => {
+                        const isCoord = coordinatorIds.has(m.id)
+                        return (
+                          <div key={m.id}
+                            className={cn(
+                              'flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-body font-semibold transition-all',
+                              isCoord
+                                ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                                : 'bg-white/8 border-white/18 text-white/80',
+                            )}>
+                            <Avatar name={m.name} size="xs" />
+                            <span className="truncate max-w-[80px]">{m.name.split(' ')[0]}</span>
+                            <button
+                              type="button"
+                              onClick={() => toggleCoordinator(m.id)}
+                              title={isCoord ? 'Remover coordenador' : 'Tornar coordenador'}
+                              className={cn(
+                                'transition-colors text-sm leading-none',
+                                isCoord ? 'text-amber-400 hover:text-white/40' : 'text-white/25 hover:text-amber-400',
+                              )}
+                            >
+                              ★
+                            </button>
+                            <button type="button" onClick={() => removeMember(m.id)}
+                              className="text-white/35 hover:text-red-400 transition-colors">
+                              ✕
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
 

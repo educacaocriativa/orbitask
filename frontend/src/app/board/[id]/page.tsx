@@ -7,6 +7,7 @@ import { useBoardSocket } from '@/hooks/useBoardSocket'
 import { Navbar } from '@/components/ui/Navbar'
 import { KanbanBoard } from '@/components/board/KanbanBoard'
 import { ArchivedColumn } from '@/components/board/ArchivedColumn'
+import { OverdueBanner } from '@/components/board/OverdueBanner'
 import { ColumnManagerModal } from '@/components/board/ColumnManagerModal'
 import { BoardManagerModal } from '@/components/board/BoardManagerModal'
 import { BoardFilterBar, type FilterState } from '@/components/board/BoardFilterBar'
@@ -22,7 +23,12 @@ export default function BoardPage() {
   const { board, isLoading, fetchBoard, archiveCard } = useBoardStore()
   const { broadcast } = useBoardSocket(boardId)
 
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN')
+  const currentUser = useAuthStore((s) => s.user)
+  const isAdmin     = currentUser?.role === 'ADMIN'
+  const isCoordinator = board?.members.some(
+    (m) => m.userId === currentUser?.id && m.role === 'COORDINATOR'
+  ) ?? false
+  const isPrivileged = isAdmin || isCoordinator
   const [showAddColumn,  setShowAddColumn]  = useState(false)
   const [showEditBoard,  setShowEditBoard]  = useState(false)
   const [archivedKey,    setArchivedKey]    = useState(0)
@@ -157,8 +163,8 @@ export default function BoardPage() {
           onChange={setFilters}
         />
 
-        {/* Edit mission button — Admin only */}
-        {isAdmin && (
+        {/* Edit mission button — Admin or Coordinator */}
+        {isPrivileged && (
           <motion.button
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
@@ -175,8 +181,8 @@ export default function BoardPage() {
           </motion.button>
         )}
 
-        {/* Add column button — Admin only */}
-        {isAdmin && (
+        {/* Add column button — Admin or Coordinator */}
+        {isPrivileged && (
           <motion.button
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.97 }}
@@ -194,6 +200,9 @@ export default function BoardPage() {
         )}
       </div>
 
+      {/* ── Overdue banner (Admin or Coordinator only) ──────── */}
+      {isPrivileged && <OverdueBanner key={boardId} boardId={boardId} />}
+
       {/* ── Kanban Board ─────────────────────────────── */}
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-hidden">
@@ -201,12 +210,12 @@ export default function BoardPage() {
             boardId={boardId}
             filteredBoard={filteredBoard}
             onCardMoved={() => broadcast('CARD_MOVED', {})}
-            onArchive={isAdmin ? handleArchive : undefined}
+            onArchive={isPrivileged ? handleArchive : undefined}
           />
         </div>
 
-        {/* ── Archived column — Admin only, only when cards exist ── */}
-        {isAdmin && (
+        {/* ── Archived column — Privileged only, only when cards exist ── */}
+        {isPrivileged && (
           <div
             className="shrink-0 overflow-y-auto px-3 pt-4 pb-4 transition-all duration-300"
             style={{ width: hasArchived ? 'calc(var(--col-width) + 1.5rem)' : '0', overflow: hasArchived ? undefined : 'hidden', padding: hasArchived ? undefined : '0' }}
@@ -229,11 +238,12 @@ export default function BoardPage() {
           open={showEditBoard}
           onClose={() => setShowEditBoard(false)}
           editBoard={{
-            id:          board.id,
-            title:       board.title,
-            color:       board.color,
-            description: board.description,
-            memberIds:   board.members.map((m) => m.userId),
+            id:             board.id,
+            title:          board.title,
+            color:          board.color,
+            description:    board.description,
+            memberIds:      board.members.map((m) => m.userId),
+            coordinatorIds: board.members.filter((m) => m.role === 'COORDINATOR').map((m) => m.userId),
           }}
           onSaved={() => fetchBoard(boardId)}
         />

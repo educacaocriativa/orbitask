@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import type { Column } from '@/stores/boardStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useIsCoordinator } from '@/hooks/useIsCoordinator'
 import { useMemo } from 'react'
 import { KanbanCard } from './KanbanCard'
 import { AddCardModal } from '../cards/AddCardModal'
@@ -22,15 +23,17 @@ export function KanbanColumn({ column, boardId, onArchive }: KanbanColumnProps) 
   const [showAddCard,    setShowAddCard]    = useState(false)
   const [showEditColumn, setShowEditColumn] = useState(false)
   const { setNodeRef, isOver }              = useDroppable({ id: column.id })
-  const currentUser                         = useAuthStore((s) => s.user)
-  const isAdmin                             = currentUser?.role === 'ADMIN'
+  const currentUser    = useAuthStore((s) => s.user)
+  const isAdmin        = currentUser?.role === 'ADMIN'
+  const isCoordinator  = useIsCoordinator()
+  const isPrivileged   = isAdmin || isCoordinator
 
-  // User can drag cards from this column only if they are owner or member
+  // User can drag cards from this column only if they are owner, member, or privileged
   const canDrag = useMemo(() => {
-    if (isAdmin) return true
+    if (isPrivileged) return true
     if (column.ownerId === currentUser?.id) return true
     return column.columnMembers.some((m) => m.user.id === currentUser?.id)
-  }, [isAdmin, currentUser?.id, column.ownerId, column.columnMembers])
+  }, [isPrivileged, currentUser?.id, column.ownerId, column.columnMembers])
 
   const cardIds      = column.cards.map((c) => c.id)
   const overdueCount = column.cards.filter((c) => c.isOverdue).length
@@ -70,8 +73,8 @@ export function KanbanColumn({ column, boardId, onArchive }: KanbanColumnProps) 
               <span className="text-xs px-2 py-0.5 rounded-md bg-white/6 text-white/70 font-mono font-bold border border-white/10">
                 {column.cards.length}
               </span>
-              {/* Edit button — Admin only */}
-              {isAdmin && (
+              {/* Edit button — Admin or Coordinator */}
+              {isPrivileged && (
                 <button
                   onClick={() => setShowEditColumn(true)}
                   title="Editar etapa"
@@ -118,8 +121,8 @@ export function KanbanColumn({ column, boardId, onArchive }: KanbanColumnProps) 
           >
             <AnimatePresence mode="popLayout">
               {column.cards.map((card, index) => {
-                // Also block if this user was the last one to move the card
-                const cardCanDrag = canDrag && card.lastMovedByUserId !== currentUser?.id
+                // Block if this user was the last one to move the card (admins and coordinators are exempt)
+                const cardCanDrag = canDrag && (isPrivileged || card.lastMovedByUserId !== currentUser?.id)
                 return (
                   <KanbanCard key={card.id} card={card} index={index} columnColor={column.color} canDrag={cardCanDrag} onArchive={onArchive} />
                 )
@@ -144,8 +147,8 @@ export function KanbanColumn({ column, boardId, onArchive }: KanbanColumnProps) 
           </div>
         </SortableContext>
 
-        {/* Add card button — Admin only */}
-        {isAdmin && (
+        {/* Add card button — Admin or Coordinator */}
+        {isPrivileged && (
           <motion.button
             onClick={() => setShowAddCard(true)}
             whileHover={{ scale: 1.01 }}

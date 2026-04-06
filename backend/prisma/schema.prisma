@@ -51,6 +51,11 @@ enum FileType {
   OTHER
 }
 
+enum BoardMemberRole {
+  COORDINATOR
+  MEMBER
+}
+
 // ─────────────────────────────────────────────
 //  USERS
 // ─────────────────────────────────────────────
@@ -118,11 +123,12 @@ model Board {
 }
 
 model BoardMember {
-  id      String @id @default(uuid())
-  boardId String @map("board_id")
-  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  userId  String @map("user_id")
-  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id      String          @id @default(uuid())
+  boardId String          @map("board_id")
+  board   Board           @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  userId  String          @map("user_id")
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    BoardMemberRole @default(MEMBER) @map("role")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -190,8 +196,9 @@ model Card {
   deadlineAt  DateTime? @map("deadline_at")
   isOverdue   Boolean   @default(false) @map("is_overdue")
 
-  requiresDeadlineToMove Boolean @default(true) @map("requires_deadline_to_move")
-  lastMovedByUserId      String? @map("last_moved_by_user_id")
+  requiresDeadlineToMove Boolean   @default(true) @map("requires_deadline_to_move")
+  lastMovedByUserId      String?   @map("last_moved_by_user_id")
+  columnEnteredAt        DateTime? @map("column_entered_at")
 
   currentColumnId String @map("current_column_id")
   currentColumn   Column @relation(fields: [currentColumnId], references: [id])

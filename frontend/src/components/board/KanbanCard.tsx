@@ -6,6 +6,7 @@ import { cn, getPriorityIcon, getPriorityLabel, formatDeadline, isOverdue, forma
 import type { Card } from '@/stores/boardStore'
 import { useBoardStore } from '@/stores/boardStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useIsCoordinator } from '@/hooks/useIsCoordinator'
 
 interface KanbanCardProps {
   card: Card
@@ -17,7 +18,9 @@ interface KanbanCardProps {
 
 export function KanbanCard({ card, columnColor, canDrag, onArchive }: KanbanCardProps) {
   const { setOpenCard } = useBoardStore()
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN')
+  const isAdmin       = useAuthStore((s) => s.user?.role === 'ADMIN')
+  const isCoordinator = useIsCoordinator()
+  const isPrivileged  = isAdmin || isCoordinator
 
   const {
     attributes, listeners, setNodeRef,
@@ -81,7 +84,7 @@ export function KanbanCard({ card, columnColor, canDrag, onArchive }: KanbanCard
           {card.title}
         </h4>
         <div className="flex items-center gap-1 shrink-0 -mt-0.5">
-          {isAdmin && onArchive && (
+          {isPrivileged && onArchive && (
             <button
               onClick={(e) => { e.stopPropagation(); onArchive(card.id) }}
               title="Arquivar card"

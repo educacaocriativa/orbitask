@@ -4,7 +4,16 @@ import { authenticate } from '../middlewares/auth'
 import { AppError } from '../utils/AppError'
 
 const BOARD_MEMBERS_INCLUDE = {
-  include: { user: { select: { id: true, name: true, avatarUrl: true, email: true } } },
+  select: { id: true, userId: true, role: true, user: { select: { id: true, name: true, avatarUrl: true, email: true } } },
+}
+
+// Helper: check if a user is coordinator of a board
+async function isCoordinator(userId: string, boardId: string): Promise<boolean> {
+  const m = await prisma.boardMember.findUnique({
+    where: { boardId_userId: { boardId, userId } },
+    select: { role: true },
+  })
+  return m?.role === 'COORDINATOR'
 }
 
 export async function boardRoutes(app: FastifyInstance) {
@@ -34,10 +43,11 @@ export async function boardRoutes(app: FastifyInstance) {
   // ── POST /boards ─────────────────────────────────────────
   app.post('/boards', { preHandler: [authenticate] }, async (request, reply) => {
     const body = request.body as {
-      title: string; description?: string; color?: string; memberIds?: string[]
+      title: string; description?: string; color?: string; memberIds?: string[]; coordinatorIds?: string[]
     }
 
     const memberIds = [...new Set([...(body.memberIds ?? [])])]
+    const coordSet  = new Set(body.coordinatorIds ?? [])
 
     const board = await prisma.board.create({
       data: {
@@ -46,7 +56,7 @@ export async function boardRoutes(app: FastifyInstance) {
         color: body.color,
         ownerId: request.user.id,
         members: {
-          create: memberIds.map((userId) => ({ userId })),
+          create: memberIds.map((userId) => ({ userId, role: coordSet.has(userId) ? 'COORDINATOR' : 'MEMBER' })),
         },
       },
       include: {
@@ -63,16 +73,21 @@ export async function boardRoutes(app: FastifyInstance) {
   app.patch('/boards/:id', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const body = request.body as {
-      title?: string; description?: string; color?: string; memberIds?: string[]
+      title?: string; description?: string; color?: string; memberIds?: string[]; coordinatorIds?: string[]
     }
 
     const board = await prisma.board.findUnique({ where: { id } })
     if (!board) throw new AppError('Board not found', 404)
-    if (board.ownerId !== request.user.id && request.user.role !== 'ADMIN') {
+
+    const userId  = request.user.id
+    const isAdmin = request.user.role === 'ADMIN'
+    const isCoord = await isCoordinator(userId, id)
+    if (board.ownerId !== userId && !isAdmin && !isCoord) {
       throw new AppError('Not authorized', 403)
     }
 
-    const { memberIds, ...rest } = body
+    const { memberIds, coordinatorIds, ...rest } = body
+    const coordSet = new Set(coordinatorIds ?? [])
 
     const updated = await prisma.board.update({
       where: { id },
@@ -81,7 +96,10 @@ export async function boardRoutes(app: FastifyInstance) {
         ...(memberIds !== undefined ? {
           members: {
             deleteMany: {},
-            create: [...new Set(memberIds)].map((userId) => ({ userId })),
+            create: [...new Set(memberIds)].map((uid) => ({
+              userId: uid,
+              role: coordSet.has(uid) ? 'COORDINATOR' : 'MEMBER',
+            })),
           },
         } : {}),
       },
@@ -216,5 +234,56 @@ export async function boardRoutes(app: FastifyInstance) {
     )
 
     return reply.send({ message: 'Columns reordered' })
+  })
+
+  // ── PATCH /boards/:boardId/members/:userId/role ──────────
+  // Admin-only: set a board member's role (COORDINATOR | MEMBER)
+  app.patch('/boards/:boardId/members/:userId/role', { preHandler: [authenticate] }, async (request, reply) => {
+    const { boardId, userId } = request.params as { boardId: string; userId: string }
+    const { role } = request.body as { role: 'COORDINATOR' | 'MEMBER' }
+
+    if (request.user.role !== 'ADMIN') throw new AppError('Apenas o Admin pode definir coordenadores', 403)
+
+    const member = await prisma.boardMember.update({
+      where: { boardId_userId: { boardId, userId } },
+      data: { role },
+      select: { id: true, userId: true, role: true, user: { select: { id: true, name: true, avatarUrl: true, email: true } } },
+    })
+
+    return reply.send({ member })
+  })
+
+  // ── GET /boards/:id/overdue-cards ────────────────────────
+  // Cards stuck in current column for more than 24h
+  // Accessible by Admin or board Coordinator
+  app.get('/boards/:id/overdue-cards', { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId  = request.user.id
+    const isAdmin = request.user.role === 'ADMIN'
+    const isCoord = await isCoordinator(userId, id)
+
+    if (!isAdmin && !isCoord) throw new AppError('Acesso negado', 403)
+
+    const threshold = new Date(Date.now() - 24 * 60 * 60 * 1000) // 24h ago
+
+    const cards = await prisma.card.findMany({
+      where: {
+        boardId:        id,
+        isArchived:     false,
+        columnEnteredAt: { lt: threshold, not: null },
+      },
+      include: {
+        currentColumn: {
+          include: {
+            owner: { select: { id: true, name: true, avatarUrl: true } },
+            columnMembers: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
+          },
+        },
+        creator: { select: { id: true, name: true } },
+      },
+      orderBy: { columnEnteredAt: 'asc' },
+    })
+
+    return reply.send({ cards })
   })
 }

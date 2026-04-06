@@ -37,6 +37,7 @@ export async function cardRoutes(app: FastifyInstance) {
         deadlineAt: body.deadline ? new Date() : undefined,
         position: (lastCard?.position ?? -1) + 1,
         currentColumnId: body.columnId,
+        columnEnteredAt: new Date(),
         boardId,
         creatorId: request.user.id,
       },
@@ -160,7 +161,16 @@ export async function cardRoutes(app: FastifyInstance) {
     const userId = request.user.id
     const isAdmin = request.user.role === 'ADMIN'
 
-    if (!isAdmin) {
+    // Check if user is coordinator of this board
+    const coordMember = !isAdmin
+      ? await prisma.boardMember.findUnique({
+          where: { boardId_userId: { boardId: card.boardId, userId } },
+          select: { role: true },
+        })
+      : null
+    const isCoord = coordMember?.role === 'COORDINATOR'
+
+    if (!isAdmin && !isCoord) {
       // Rule 1: user already moved this card — must wait for someone else to move it back
       if (card.lastMovedByUserId === userId) {
         await prisma.accessLog.create({
@@ -241,6 +251,7 @@ export async function cardRoutes(app: FastifyInstance) {
         deadlineAt: new Date(),
         isOverdue: false,
         lastMovedByUserId: userId,
+        columnEnteredAt: new Date(),
       },
     })
 
@@ -282,12 +293,20 @@ export async function cardRoutes(app: FastifyInstance) {
     })
   })
 
-  // ── DELETE /cards/:id — Archive (Admin only) ─────────────
+  // ── DELETE /cards/:id — Archive (Admin or Coordinator) ──
   app.delete('/cards/:id', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string }
 
-    if (request.user.role !== 'ADMIN') {
-      throw new AppError('Apenas o Admin pode arquivar cards', 403)
+    const isAdmin = request.user.role === 'ADMIN'
+    if (!isAdmin) {
+      const cardForCheck = await prisma.card.findUnique({ where: { id }, select: { boardId: true } })
+      const coordMember  = cardForCheck
+        ? await prisma.boardMember.findUnique({
+            where: { boardId_userId: { boardId: cardForCheck.boardId, userId: request.user.id } },
+            select: { role: true },
+          })
+        : null
+      if (coordMember?.role !== 'COORDINATOR') throw new AppError('Sem permissão para arquivar cards', 403)
     }
 
     const card = await prisma.card.findUnique({ where: { id } })
@@ -316,12 +335,20 @@ export async function cardRoutes(app: FastifyInstance) {
     return reply.send({ message: 'Card archived successfully' })
   })
 
-  // ── POST /cards/:id/restore — Restore archived card (Admin only) ─
+  // ── POST /cards/:id/restore — Restore archived card (Admin or Coordinator) ─
   app.post('/cards/:id/restore', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string }
 
-    if (request.user.role !== 'ADMIN') {
-      throw new AppError('Apenas o Admin pode restaurar cards', 403)
+    const isAdmin = request.user.role === 'ADMIN'
+    if (!isAdmin) {
+      const cardForCheck = await prisma.card.findUnique({ where: { id }, select: { boardId: true } })
+      const coordMember  = cardForCheck
+        ? await prisma.boardMember.findUnique({
+            where: { boardId_userId: { boardId: cardForCheck.boardId, userId: request.user.id } },
+            select: { role: true },
+          })
+        : null
+      if (coordMember?.role !== 'COORDINATOR') throw new AppError('Sem permissão para restaurar cards', 403)
     }
 
     const card = await prisma.card.findUnique({ where: { id } })
@@ -358,12 +385,17 @@ export async function cardRoutes(app: FastifyInstance) {
     return reply.send({ message: 'Card restored successfully' })
   })
 
-  // ── GET /boards/:boardId/archived-cards (Admin only) ─────
+  // ── GET /boards/:boardId/archived-cards (Admin or Coordinator) ─
   app.get('/boards/:boardId/archived-cards', { preHandler: [authenticate] }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string }
 
-    if (request.user.role !== 'ADMIN') {
-      throw new AppError('Apenas o Admin pode ver cards arquivados', 403)
+    const isAdmin = request.user.role === 'ADMIN'
+    if (!isAdmin) {
+      const coordMember = await prisma.boardMember.findUnique({
+        where: { boardId_userId: { boardId, userId: request.user.id } },
+        select: { role: true },
+      })
+      if (coordMember?.role !== 'COORDINATOR') throw new AppError('Sem permissão para ver cards arquivados', 403)
     }
 
     const cards = await prisma.card.findMany({

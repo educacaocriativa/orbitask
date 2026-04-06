@@ -105,34 +105,59 @@ export function AnnouncementInbox({ onClose }: Props) {
               ) : announcements.length === 0 ? (
                 <div className="p-4 text-center text-slate-500 text-sm">Nenhum comunicado</div>
               ) : (
-                announcements.map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => handleOpen(a)}
-                    className={`w-full text-left px-4 py-3 border-b border-slate-700/30 hover:bg-slate-700/30 transition-colors ${
-                      selected?.id === a.id ? 'bg-violet-500/10 border-l-2 border-l-violet-500' : ''
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {!a.isRead && (
-                        <span className="mt-1.5 w-2 h-2 rounded-full bg-violet-400 flex-shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <p className={`text-sm truncate ${!a.isRead ? 'text-white font-semibold' : 'text-slate-300'}`}>
-                          {a.title}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {new Date(a.createdAt).toLocaleDateString('pt-BR')}
-                        </p>
-                        {a.replies.length > 0 && (
-                          <p className="text-xs text-violet-400 mt-0.5">
-                            {a.replies.length} resposta(s)
-                          </p>
+                announcements.map((a) => {
+                  const lastReply = a.replies[a.replies.length - 1]
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => handleOpen(a)}
+                      className={`w-full text-left px-4 py-3 border-b border-slate-700/30 hover:bg-slate-700/30 transition-colors ${
+                        selected?.id === a.id ? 'bg-violet-500/10 border-l-2 border-l-violet-500' : ''
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {!a.isRead && (
+                          <span className="mt-1.5 w-2 h-2 rounded-full bg-violet-400 flex-shrink-0" />
                         )}
+                        <div className="min-w-0 flex-1">
+                          {/* Sender name — quem iniciou a conversa */}
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <div className="w-5 h-5 rounded-full bg-violet-500/30 border border-violet-500/40 flex items-center justify-center text-[10px] font-bold text-violet-300 flex-shrink-0">
+                              {a.createdBy.name[0].toUpperCase()}
+                            </div>
+                            <span className="text-[11px] font-semibold text-violet-300 truncate">
+                              {a.createdBy.name}
+                            </span>
+                          </div>
+
+                          {/* Title */}
+                          <p className={`text-sm truncate ${!a.isRead ? 'text-white font-semibold' : 'text-slate-300'}`}>
+                            {a.title}
+                          </p>
+
+                          {/* Last reply preview */}
+                          {lastReply ? (
+                            <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                              <span className="text-slate-400 font-medium">{lastReply.author.name.split(' ')[0]}:</span>{' '}
+                              {lastReply.content}
+                            </p>
+                          ) : (
+                            <p className="text-[11px] text-slate-600 mt-0.5">
+                              {new Date(a.createdAt).toLocaleDateString('pt-BR')}
+                            </p>
+                          )}
+
+                          {/* Reply count */}
+                          {a.replies.length > 0 && (
+                            <p className="text-[10px] text-violet-400/70 mt-0.5">
+                              💬 {a.replies.length} resposta{a.replies.length > 1 ? 's' : ''}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))
+                    </button>
+                  )
+                })
               )}
             </div>
           </div>
@@ -146,10 +171,39 @@ export function AnnouncementInbox({ onClose }: Props) {
             ) : (
               <>
                 <div className="p-4 border-b border-slate-700/50 flex-shrink-0">
-                  <h3 className="text-base font-bold text-white">{selected.title}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {selected.createdBy.name} · {new Date(selected.createdAt).toLocaleDateString('pt-BR')}
-                  </p>
+                  <h3 className="text-base font-bold text-white mb-2">{selected.title}</h3>
+
+                  {/* Participants */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Sender */}
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-violet-500/15 border border-violet-500/25">
+                      <div className="w-4 h-4 rounded-full bg-violet-500/40 flex items-center justify-center text-[9px] font-bold text-violet-200">
+                        {selected.createdBy.name[0].toUpperCase()}
+                      </div>
+                      <span className="text-[11px] font-semibold text-violet-300">
+                        {selected.createdBy.name}
+                      </span>
+                      <span className="text-[9px] text-violet-400/60 uppercase tracking-wider">criador</span>
+                    </div>
+
+                    {/* Unique reply authors (excluding sender) */}
+                    {[...new Map(
+                      selected.replies
+                        .filter((r) => r.author.id !== selected.createdBy.id)
+                        .map((r) => [r.author.id, r.author])
+                    ).values()].map((author) => (
+                      <div key={author.id} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-700/40 border border-slate-600/30">
+                        <div className="w-4 h-4 rounded-full bg-slate-500/50 flex items-center justify-center text-[9px] font-bold text-slate-200">
+                          {author.name[0].toUpperCase()}
+                        </div>
+                        <span className="text-[11px] font-medium text-slate-300">{author.name.split(' ')[0]}</span>
+                      </div>
+                    ))}
+
+                    <span className="text-[10px] text-slate-600 ml-auto">
+                      {new Date(selected.createdAt).toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">

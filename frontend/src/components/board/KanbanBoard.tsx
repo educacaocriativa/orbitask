@@ -9,6 +9,7 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useBoardStore, type Card } from '@/stores/boardStore'
 import { useAuthStore } from '@/stores/authStore'
+import { useIsCoordinator } from '@/hooks/useIsCoordinator'
 import { KanbanColumn } from './KanbanColumn'
 import { KanbanCard } from './KanbanCard'
 import { MoveCardModal } from '../cards/MoveCardModal'
@@ -24,7 +25,8 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: KanbanBoardProps) {
   const { board, setActiveCard, activeCard, optimisticMove, moveCard, reorderCard, openCardId, setOpenCard } = useBoardStore()
-  const currentUser = useAuthStore((s) => s.user)
+  const currentUser   = useAuthStore((s) => s.user)
+  const isCoordinator = useIsCoordinator()
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null)
   const [pendingMove, setPendingMove] = useState<{
     cardId: string; fromColumnId: string; toColumnId: string; position: number
@@ -84,16 +86,17 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: 
     }
 
     // Moving to a different column → check permission first
-    const isAdmin   = currentUser?.role === 'ADMIN'
-    const isOwner   = fromColumn.ownerId === currentUser?.id
-    const isMember  = fromColumn.columnMembers?.some((m) => m.user.id === currentUser?.id) ?? false
+    const isAdmin      = currentUser?.role === 'ADMIN'
+    const isPrivileged = isAdmin || isCoordinator
+    const isOwner      = fromColumn.ownerId === currentUser?.id
+    const isMember     = fromColumn.columnMembers?.some((m) => m.user.id === currentUser?.id) ?? false
     const alreadyMoved = activeCard.lastMovedByUserId === currentUser?.id
 
-    if (!isAdmin && (!isOwner && !isMember)) {
+    if (!isPrivileged && (!isOwner && !isMember)) {
       toast.error('Você não tem permissão para mover este card.\nEle pertence a uma etapa da qual você não faz parte.', { duration: 4000 })
       return
     }
-    if (!isAdmin && alreadyMoved) {
+    if (!isPrivileged && alreadyMoved) {
       toast.error('Você já moveu este card. Para movê-lo novamente, outro usuário ou o Admin precisa devolvê-lo à sua etapa.', { duration: 5000 })
       return
     }
@@ -111,7 +114,7 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: 
       toColumnId: toColumn.id,
       position,
     })
-  }, [board, activeCard, currentUser, setActiveCard, optimisticMove, reorderCard])
+  }, [board, activeCard, currentUser, isCoordinator, setActiveCard, optimisticMove, reorderCard])
 
   async function confirmMove(deadline: string) {
     if (!pendingMove) return
