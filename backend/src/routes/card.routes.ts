@@ -4,6 +4,7 @@ import { authenticate } from '../middlewares/auth'
 import { AppError } from '../utils/AppError'
 import { enqueueNotification } from '../jobs/notificationQueue'
 import { NotificationType } from '@prisma/client'
+import { googleDrive } from '../services/GoogleDriveService'
 
 export async function cardRoutes(app: FastifyInstance) {
   // ── POST /boards/:boardId/cards ──────────────────────────
@@ -230,6 +231,9 @@ export async function cardRoutes(app: FastifyInstance) {
     })
     if (!targetColumn) throw new AppError('Target column not found', 404)
 
+    // Save previous Drive folder URL before move
+    const previousDriveFolderUrl = card.driveFolderUrl ?? null
+
     const fromColumnTitle = card.currentColumn.title
 
     // Shift other cards in target column
@@ -240,6 +244,21 @@ export async function cardRoutes(app: FastifyInstance) {
       },
       data: { position: { increment: 1 } },
     })
+
+    // Create Drive folder for the card in the new column
+    let newDriveFolderUrl: string | null = null
+    let newDriveFolderId: string | null = null
+    if (targetColumn.driveFolderId) {
+      try {
+        const folder = await googleDrive.createCardFolder(card.title, request.user.name, targetColumn.driveFolderId)
+        if (folder) {
+          newDriveFolderUrl = folder.url
+          newDriveFolderId = folder.id
+        }
+      } catch (err) {
+        console.error('Drive card folder error:', err)
+      }
+    }
 
     // Move card and set new deadline; record who moved it for one-move-per-user enforcement
     const updatedCard = await prisma.card.update({
@@ -252,6 +271,8 @@ export async function cardRoutes(app: FastifyInstance) {
         isOverdue: false,
         lastMovedByUserId: userId,
         columnEnteredAt: new Date(),
+        previousDriveFolderUrl,
+        ...(newDriveFolderId ? { driveFolderId: newDriveFolderId, driveFolderUrl: newDriveFolderUrl } : {}),
       },
     })
 
@@ -290,6 +311,8 @@ export async function cardRoutes(app: FastifyInstance) {
     return reply.send({
       card: updatedCard,
       message: `Card moved to "${targetColumn.title}"`,
+      driveFolderUrl: newDriveFolderUrl,
+      previousDriveFolderUrl,
     })
   })
 

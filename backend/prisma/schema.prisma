@@ -109,6 +109,9 @@ model Board {
   color       String  @default("#6366f1")
   isArchived  Boolean @default(false) @map("is_archived")
 
+  driveFolderId  String? @map("drive_folder_id")
+  driveFolderUrl String? @map("drive_folder_url") @db.Text
+
   ownerId String @map("owner_id")
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
@@ -145,6 +148,9 @@ model Column {
   title    String
   position Int
   color    String @default("#818cf8")
+
+  driveFolderId  String? @map("drive_folder_id")
+  driveFolderUrl String? @map("drive_folder_url") @db.Text
 
   ownerId String @map("owner_id")
   owner   User   @relation("ColumnPrimaryOwner", fields: [ownerId], references: [id])
@@ -199,6 +205,10 @@ model Card {
   requiresDeadlineToMove Boolean   @default(true) @map("requires_deadline_to_move")
   lastMovedByUserId      String?   @map("last_moved_by_user_id")
   columnEnteredAt        DateTime? @map("column_entered_at")
+
+  driveFolderId        String? @map("drive_folder_id")
+  driveFolderUrl       String? @map("drive_folder_url") @db.Text
+  previousDriveFolderUrl String? @map("previous_drive_folder_url") @db.Text
 
   currentColumnId String @map("current_column_id")
   currentColumn   Column @relation(fields: [currentColumnId], references: [id])

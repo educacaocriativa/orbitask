@@ -33,6 +33,9 @@ export interface Card {
   archivedAt?: string
   archivedFromColumnId?: string | null
   archivedFromColumn?: { id: string; title: string; color: string } | null
+  // Google Drive
+  driveFolderUrl?: string | null
+  previousDriveFolderUrl?: string | null
 }
 
 export interface Column {
@@ -60,7 +63,7 @@ interface BoardState {
   openCardId: string | null
 
   fetchBoard: (id: string) => Promise<void>
-  moveCard: (cardId: string, targetColumnId: string, position: number, deadline: string) => Promise<void>
+  moveCard: (cardId: string, targetColumnId: string, position: number, deadline: string) => Promise<{ driveFolderUrl?: string | null; previousDriveFolderUrl?: string | null }>
   reorderCard: (columnId: string, cardIds: string[]) => Promise<void>
   addCard: (boardId: string, data: Partial<Card> & { columnId: string }) => Promise<void>
   updateCard: (cardId: string, data: Partial<Card>) => Promise<void>

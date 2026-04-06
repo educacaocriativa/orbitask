@@ -10,9 +10,10 @@ interface MoveCardModalProps {
   onCancel: () => void
   targetColumnId?: string
   board?: Board | null
+  sourceDriveFolderUrl?: string | null
 }
 
-export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board }: MoveCardModalProps) {
+export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board, sourceDriveFolderUrl }: MoveCardModalProps) {
   const [isLoading, setIsLoading] = useState(false)
 
   const targetColumn = board?.columns.find((c) => c.id === targetColumnId)
@@ -93,6 +94,30 @@ export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board
               </div>
             )}
 
+            {/* Drive: buscar arquivo da etapa anterior */}
+            {sourceDriveFolderUrl && (
+              <a
+                href={sourceDriveFolderUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  'flex items-center gap-3 px-3 py-3 rounded-xl mb-3 w-full transition-all',
+                  'border border-blue-500/25 hover:border-blue-400/50',
+                  'bg-blue-500/8 hover:bg-blue-500/15',
+                )}
+              >
+                <span className="text-lg">📁</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-display font-semibold text-blue-300">
+                    Buscar arquivo da etapa anterior
+                  </p>
+                  <p className="text-[11px] text-white/30 font-body truncate mt-0.5">
+                    Abrir pasta do Google Drive →
+                  </p>
+                </div>
+              </a>
+            )}
+
             {/* 24h info */}
             <div
               className="flex items-center gap-3 px-3 py-3 rounded-xl mb-5"
@@ -104,7 +129,10 @@ export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board
                   Prazo automático: 24 horas
                 </p>
                 <p className="text-[11px] text-white/35 font-body mt-0.5">
-                  O dono da etapa será notificado via WhatsApp 🛸
+                  {sourceDriveFolderUrl
+                    ? 'Após confirmar, um link para depositar o arquivo será gerado 📤'
+                    : 'O dono da etapa será notificado via WhatsApp 🛸'
+                  }
                 </p>
               </div>
             </div>
@@ -142,4 +170,3 @@ export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board
     </AnimatePresence>
   )
 }
-

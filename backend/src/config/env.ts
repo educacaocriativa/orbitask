@@ -32,6 +32,10 @@ const envSchema = z.object({
   ADMIN_EMAIL: z.string().email().default('admin@orbitask.com'),
   ADMIN_PASSWORD: z.string().default('Admin@123456'),
 
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
+  GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: z.string().optional(),
+  GOOGLE_SHARED_DRIVE_ID: z.string().optional(),
+
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW: z.coerce.number().default(60000),
 })

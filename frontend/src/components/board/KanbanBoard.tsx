@@ -119,9 +119,31 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: 
   async function confirmMove(deadline: string) {
     if (!pendingMove) return
     try {
-      await moveCard(pendingMove.cardId, pendingMove.toColumnId, pendingMove.position, deadline)
-      toast.success('🚀 Card movido com sucesso!')
+      const result = await moveCard(pendingMove.cardId, pendingMove.toColumnId, pendingMove.position, deadline)
       onCardMoved?.()
+
+      // Show Drive folder link if available
+      if (result?.driveFolderUrl) {
+        toast(
+          (t) => (
+            <div className="flex flex-col gap-1">
+              <span className="font-semibold text-sm">🚀 Card movido!</span>
+              <a
+                href={result.driveFolderUrl!}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => toast.dismiss(t.id)}
+                className="text-xs text-blue-400 underline"
+              >
+                📤 Depositar arquivo na nova etapa →
+              </a>
+            </div>
+          ),
+          { duration: 8000 }
+        )
+      } else {
+        toast.success('🚀 Card movido com sucesso!')
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? 'Erro ao mover card')
       // Re-fetch to restore state
@@ -192,6 +214,14 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: 
         onCancel={cancelMove}
         targetColumnId={pendingMove?.toColumnId}
         board={board}
+        sourceDriveFolderUrl={
+          pendingMove
+            ? board?.columns
+                .flatMap((c) => c.cards)
+                .find((c) => c.id === pendingMove.cardId)
+                ?.driveFolderUrl ?? null
+            : null
+        }
       />
 
       {/* Card detail drawer */}
