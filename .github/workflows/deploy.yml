@@ -1,4 +1,4 @@
-name: 🚀 Orbitask — Deploy to VPS
+name: 🚀 Orbitask — Deploy to App Runner
 
 on:
   push:
@@ -7,12 +7,13 @@ on:
     branches: [main]
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_BACKEND:  ghcr.io/${{ github.repository }}/backend
-  IMAGE_FRONTEND: ghcr.io/${{ github.repository }}/frontend
+  AWS_REGION:        us-east-1
+  AWS_REGION_RUNNER: us-east-2
+  ECR_REPOSITORY:    540280374180.dkr.ecr.us-east-1.amazonaws.com/orbitask-backend
+  APP_RUNNER_ARN:    arn:aws:apprunner:us-east-2:540280374180:service/orbitask/b30957f47517415593b31e84b534eee5
 
 jobs:
-  # ── 1. Lint & type-check ─────────────────────────────────
+  # ── 1. Quality Checks ────────────────────────────────────
   quality:
     name: Quality Checks
     runs-on: ubuntu-latest
@@ -42,110 +43,57 @@ jobs:
       - name: Lint frontend
         run: cd frontend && npm run lint || true
 
-  # ── 2. Build & push Docker images ────────────────────────
+  # ── 2. Build & push to ECR ───────────────────────────────
   build:
-    name: Build Images
+    name: Build & Push to ECR
     runs-on: ubuntu-latest
     needs: quality
     if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & push backend
+      - name: Build & push backend to ECR
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: true
           tags: |
-            ${{ env.IMAGE_BACKEND }}:latest
-            ${{ env.IMAGE_BACKEND }}:${{ github.sha }}
+            ${{ env.ECR_REPOSITORY }}:latest
+            ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 
-      - name: Build & push frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          push: true
-          tags: |
-            ${{ env.IMAGE_FRONTEND }}:latest
-            ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to:   type=gha,mode=max
-
-  # ── 3. Deploy to VPS ─────────────────────────────────────
+  # ── 3. Deploy to App Runner ──────────────────────────────
   deploy:
-    name: Deploy to VPS
+    name: Deploy to App Runner
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main'
-    environment: production
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Copy docker-compose to VPS
-        uses: appleboy/scp-action@v0.1.7
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host:     ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key:      ${{ secrets.VPS_SSH_KEY }}
-          source:   "docker-compose.yml,nginx/"
-          target:   "/opt/orbitask"
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION_RUNNER }}
 
-      - name: Deploy on VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host:     ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key:      ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            set -e
-            cd /opt/orbitask
-
-            # Login to GHCR
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            # Pull latest images
-            docker pull ${{ env.IMAGE_BACKEND }}:latest
-            docker pull ${{ env.IMAGE_FRONTEND }}:latest
-
-            # Rolling restart (zero-downtime)
-            docker compose up -d --no-build \
-              --scale backend=2 \
-              backend frontend nginx
-
-            # Wait for health check
-            sleep 10
-            curl -f http://localhost:3333/health || exit 1
-
-            # Scale back to 1
-            docker compose up -d --no-build --scale backend=1 backend
-
-            # Cleanup old images
-            docker image prune -f
-
-            echo "✅ Deploy completed at $(date)"
-
-      - name: Notify success
-        if: success()
-        run: echo "🚀 Deployed commit ${{ github.sha }} to production"
-
-      - name: Notify failure
-        if: failure()
-        run: echo "❌ Deploy failed for commit ${{ github.sha }}"
-
+      - name: Trigger App Runner deployment
+        run: |
+          aws apprunner start-deployment \
+            --service-arn "${{ env.APP_RUNNER_ARN }}"
+          echo "✅ App Runner deployment triggered at $(date)"
