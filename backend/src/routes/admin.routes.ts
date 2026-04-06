@@ -3,8 +3,10 @@ import { UserRole } from '@prisma/client'
 import { AdminService } from '../services/AdminService'
 import { requireAdmin } from '../middlewares/auth'
 import { WhatsAppService } from '../services/WhatsAppService'
+import { googleDrive } from '../services/GoogleDriveService'
 import { prisma } from '../database/prisma'
 import { AppError } from '../utils/AppError'
+import { env } from '../config/env'
 
 // ── CSV parser (no external dependency) ──────────────────
 function parseCSV(raw: string): Record<string, string>[] {
@@ -353,6 +355,34 @@ export async function adminRoutes(app: FastifyInstance) {
     reply.header('Content-Type', 'text/csv')
     reply.header('Content-Disposition', 'attachment; filename="template_missoes.csv"')
     return reply.send(csv)
+  })
+
+  // ── GET /admin/drive/health — Diagnose Drive connection ──
+  app.get('/admin/drive/health', { preHandler: [requireAdmin()] }, async (request, reply) => {
+    return reply.send({
+      configured: googleDrive.isConfigured,
+      sharedDriveId: env.GOOGLE_SHARED_DRIVE_ID ?? null,
+      serviceAccountEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? null,
+      hasPrivateKey: !!(env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY),
+      privateKeyPreview: env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        ? env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.substring(0, 60) + '...'
+        : null,
+    })
+  })
+
+  // ── POST /admin/drive/test-folder — Create test folder ───
+  app.post('/admin/drive/test-folder', { preHandler: [requireAdmin()] }, async (request, reply) => {
+    if (!googleDrive.isConfigured) {
+      return reply.status(400).send({ error: 'Drive not configured — check env vars' })
+    }
+
+    try {
+      const folder = await googleDrive.createBoardFolder('_Orbitask_Test_' + Date.now())
+      if (!folder) return reply.status(500).send({ error: 'createBoardFolder returned null' })
+      return reply.send({ ok: true, folderId: folder.id, folderUrl: folder.url })
+    } catch (err: any) {
+      return reply.status(500).send({ error: err?.message ?? String(err), details: err?.response?.data })
+    }
   })
 }
 
