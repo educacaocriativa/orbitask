@@ -19,7 +19,7 @@ export async function cardRoutes(app: FastifyInstance) {
 
     const column = await prisma.column.findUnique({
       where: { id: body.columnId },
-      include: { owner: true },
+      include: { owner: true, board: true },
     })
     if (!column) throw new AppError('Column not found', 404)
 
@@ -59,6 +59,21 @@ export async function cardRoutes(app: FastifyInstance) {
         content: null,
       },
     })
+
+    // ── Create Drive folder for the card in this column ─────
+    if (column.driveFolderId) {
+      try {
+        const folder = await googleDrive.createCardFolder(card.title, request.user.name, column.driveFolderId)
+        if (folder) {
+          await prisma.card.update({
+            where: { id: card.id },
+            data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
+          })
+        }
+      } catch (err) {
+        console.error('Drive card folder (create) error:', err)
+      }
+    }
 
     return reply.status(201).send({ card })
   })

@@ -102,6 +102,27 @@ export class GoogleDriveService {
     await Promise.allSettled(emails.map((e) => this.shareFolder(folderId, e)))
   }
 
+  // ── Add members to the Shared Drive itself ───────────────
+  async addMembersToSharedDrive(emails: string[]): Promise<void> {
+    if (!this.drive) return
+    await Promise.allSettled(emails.map(async (email) => {
+      try {
+        await this.drive!.permissions.create({
+          fileId: this.sharedDriveId,
+          requestBody: {
+            role: 'writer',
+            type: 'user',
+            emailAddress: email,
+          },
+          supportsAllDrives: true,
+          sendNotificationEmail: false,
+        })
+      } catch (err) {
+        console.warn(`GoogleDrive add member failed for ${email}:`, (err as any)?.message)
+      }
+    }))
+  }
+
   // ── Test connection by listing Shared Drive ───────────────
   async testConnection(): Promise<{ ok: boolean; error?: string; details?: unknown }> {
     if (!this.drive) return { ok: false, error: 'Not configured' }

@@ -70,25 +70,25 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Create Drive folder for this board ──────────────────
-    setImmediate(async () => {
-      try {
-        const folder = await googleDrive.createBoardFolder(board.title)
-        if (folder) {
-          await prisma.board.update({
-            where: { id: board.id },
-            data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
-          })
-          // Share with all members
-          const emails = board.members.map((m) => m.user.email).filter(Boolean)
-          await googleDrive.shareFolderWithMany(folder.id, emails as string[])
-        }
-      } catch (err) {
-        console.error('Drive board folder error:', err)
+    // ── Create Drive folder for this board (sync so columns can use it) ──
+    let driveFolderId: string | null = null
+    try {
+      const folder = await googleDrive.createBoardFolder(board.title)
+      if (folder) {
+        driveFolderId = folder.id
+        await prisma.board.update({
+          where: { id: board.id },
+          data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
+        })
+        // Add all members to Shared Drive
+        const emails = board.members.map((m) => m.user.email).filter(Boolean)
+        setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
       }
-    })
+    } catch (err) {
+      console.error('Drive board folder error:', err)
+    }
 
-    return reply.status(201).send({ board })
+    return reply.status(201).send({ board, driveFolderId })
   })
 
   // ── PATCH /boards/:id ────────────────────────────────────
@@ -132,12 +132,10 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Share Drive folder with any new members ─────────────
-    if (memberIds !== undefined && updated.driveFolderId) {
-      setImmediate(async () => {
-        const emails = updated.members.map((m) => m.user.email).filter(Boolean)
-        await googleDrive.shareFolderWithMany(updated.driveFolderId!, emails as string[])
-      })
+    // ── Add new members to Shared Drive ─────────────────────
+    if (memberIds !== undefined) {
+      const emails = updated.members.map((m) => m.user.email).filter(Boolean)
+      setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
     }
 
     return reply.send({ board: updated })
@@ -223,21 +221,19 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Create Drive subfolder inside board folder ──────────
+    // ── Create Drive subfolder inside board folder (sync) ───
     if (board.driveFolderId) {
-      setImmediate(async () => {
-        try {
-          const folder = await googleDrive.createColumnFolder(body.title, board.driveFolderId!)
-          if (folder) {
-            await prisma.column.update({
-              where: { id: column.id },
-              data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
-            })
-          }
-        } catch (err) {
-          console.error('Drive column folder error:', err)
+      try {
+        const folder = await googleDrive.createColumnFolder(body.title, board.driveFolderId)
+        if (folder) {
+          await prisma.column.update({
+            where: { id: column.id },
+            data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
+          })
         }
-      })
+      } catch (err) {
+        console.error('Drive column folder error:', err)
+      }
     }
 
     return reply.status(201).send({ column })
