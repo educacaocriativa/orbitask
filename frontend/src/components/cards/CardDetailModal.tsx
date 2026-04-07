@@ -179,29 +179,6 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 ))}
               </div>
 
-              {/* Google Drive folder link */}
-              {card.driveFolderUrl && (
-                <a
-                  href={card.driveFolderUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cn(
-                    'mt-3 flex items-center gap-2.5 px-3 py-2.5 rounded-xl w-full transition-all',
-                    'border border-blue-500/30 hover:border-blue-400/60',
-                    'bg-blue-500/8 hover:bg-blue-500/18',
-                  )}
-                >
-                  <span className="text-base">📁</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-display font-semibold text-blue-300">
-                      Pasta do Google Drive
-                    </p>
-                    <p className="text-[11px] text-white/35 font-body mt-0.5">
-                      Clique para depositar ou buscar arquivos desta etapa →
-                    </p>
-                  </div>
-                </a>
-              )}
             </div>
 
             {/* Sections */}
@@ -215,9 +192,10 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                 </div>
               )}
 
-              {card.sections?.map((section: any) => {
+              {card.sections?.map((section: any, index: number) => {
                 const isOwner    = canEditSection(section)
                 const ownerUser  = section.owner
+                const prevSection = index > 0 ? card.sections[index - 1] : null
 
                 return (
                   <div key={section.id} className="space-y-3">
@@ -246,6 +224,16 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                       )}
                     </div>
 
+                    {/* Drive: buscar arquivo da etapa anterior */}
+                    {prevSection?.driveFolderUrl && (
+                      <DriveLink
+                        url={prevSection.driveFolderUrl}
+                        label={`Buscar arquivo — ${prevSection.owner.name} (${prevSection.column.title})`}
+                        icon="📁"
+                        variant="get"
+                      />
+                    )}
+
                     {/* Rich text editor — locked if not owner */}
                     <div className={cn(
                       'rounded-xl border p-3 transition-all',
@@ -269,6 +257,16 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                         readOnly={!isOwner}
                       />
                     </div>
+
+                    {/* Drive: depositar arquivo nesta etapa */}
+                    {section.driveFolderUrl && (
+                      <DriveLink
+                        url={section.driveFolderUrl}
+                        label={`Depositar arquivo — ${ownerUser.name} (${section.column.title})`}
+                        icon="📤"
+                        variant="deposit"
+                      />
+                    )}
 
                     {/* Files */}
                     <div className="space-y-2">
@@ -433,5 +431,34 @@ function getFileIcon(mimeType: string): string {
   if (mimeType.includes('word') || mimeType.includes('document')) return '📝'
   if (mimeType.startsWith('image/')) return '🖼️'
   return '📎'
+}
+
+function DriveLink({ url, label, icon, variant }: {
+  url: string; label: string; icon: string; variant: 'get' | 'deposit'
+}) {
+  const isGet = variant === 'get'
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        'flex items-center gap-2.5 px-3 py-2.5 rounded-xl w-full transition-all',
+        isGet
+          ? 'border border-blue-500/30 hover:border-blue-400/55 bg-blue-500/8 hover:bg-blue-500/15'
+          : 'border border-emerald-500/30 hover:border-emerald-400/55 bg-emerald-500/8 hover:bg-emerald-500/15',
+      )}
+    >
+      <span className="text-base">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <p className={cn('text-xs font-display font-semibold truncate', isGet ? 'text-blue-300' : 'text-emerald-300')}>
+          {label}
+        </p>
+        <p className="text-[11px] text-white/30 font-body mt-0.5">
+          {isGet ? 'Abrir pasta para buscar arquivo →' : 'Abrir pasta para depositar arquivo →'}
+        </p>
+      </div>
+    </a>
+  )
 }
 

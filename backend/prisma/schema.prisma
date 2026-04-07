@@ -241,6 +241,9 @@ model CardSection {
   id      String @id @default(uuid())
   content Json?
 
+  driveFolderUrl String? @map("drive_folder_url") @db.Text
+  driveFolderId  String? @map("drive_folder_id")
+
   cardId String @map("card_id")
   card   Card   @relation(fields: [cardId], references: [id], onDelete: Cascade)
 

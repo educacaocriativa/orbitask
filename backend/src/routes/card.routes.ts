@@ -50,21 +50,17 @@ export async function cardRoutes(app: FastifyInstance) {
       },
     })
 
-    // Auto-create section for this column's owner
-    await prisma.cardSection.create({
-      data: {
-        cardId: card.id,
-        columnId: body.columnId,
-        ownerId: column.owner.id,
-        content: null,
-      },
-    })
+    // ── Create Drive folder & section ────────────────────────
+    let sectionDriveFolderId: string | null = null
+    let sectionDriveFolderUrl: string | null = null
 
-    // ── Create Drive folder for the card in this column ─────
     if (column.driveFolderId) {
       try {
-        const folder = await googleDrive.createCardFolder(card.title, request.user.name, column.driveFolderId)
+        // Folder named after COLUMN OWNER (not the creator)
+        const folder = await googleDrive.createCardFolder(card.title, column.owner.name, column.driveFolderId)
         if (folder) {
+          sectionDriveFolderId = folder.id
+          sectionDriveFolderUrl = folder.url
           await prisma.card.update({
             where: { id: card.id },
             data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
@@ -74,6 +70,17 @@ export async function cardRoutes(app: FastifyInstance) {
         console.error('Drive card folder (create) error:', err)
       }
     }
+
+    await prisma.cardSection.create({
+      data: {
+        cardId: card.id,
+        columnId: body.columnId,
+        ownerId: column.owner.id,
+        content: null,
+        driveFolderId: sectionDriveFolderId,
+        driveFolderUrl: sectionDriveFolderUrl,
+      },
+    })
 
     return reply.status(201).send({ card })
   })
@@ -260,12 +267,12 @@ export async function cardRoutes(app: FastifyInstance) {
       data: { position: { increment: 1 } },
     })
 
-    // Create Drive folder for the card in the new column
+    // Create Drive folder named after COLUMN OWNER (not the mover)
     let newDriveFolderUrl: string | null = null
     let newDriveFolderId: string | null = null
     if (targetColumn.driveFolderId) {
       try {
-        const folder = await googleDrive.createCardFolder(card.title, request.user.name, targetColumn.driveFolderId)
+        const folder = await googleDrive.createCardFolder(card.title, targetColumn.owner.name, targetColumn.driveFolderId)
         if (folder) {
           newDriveFolderUrl = folder.url
           newDriveFolderId = folder.id
@@ -294,12 +301,17 @@ export async function cardRoutes(app: FastifyInstance) {
     // Auto-create section for the new column's owner (if not already exists)
     await prisma.cardSection.upsert({
       where: { cardId_columnId: { cardId: id, columnId: targetColumnId } },
-      update: {},
+      update: {
+        // Update Drive folder if just created
+        ...(newDriveFolderId ? { driveFolderId: newDriveFolderId, driveFolderUrl: newDriveFolderUrl } : {}),
+      },
       create: {
         cardId: id,
         columnId: targetColumnId,
         ownerId: targetColumn.owner.id,
         content: null,
+        driveFolderId: newDriveFolderId,
+        driveFolderUrl: newDriveFolderUrl,
       },
     })
 
