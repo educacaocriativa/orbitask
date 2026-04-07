@@ -80,9 +80,9 @@ export async function boardRoutes(app: FastifyInstance) {
           where: { id: board.id },
           data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
         })
-        // Share board folder with all members
+        // Add all members to Shared Drive
         const emails = board.members.map((m) => m.user.email).filter(Boolean)
-        setImmediate(() => googleDrive.shareFolderWithMany(folder.id, emails as string[]))
+        setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
       }
     } catch (err) {
       console.error('Drive board folder error:', err)
@@ -132,10 +132,10 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Share board Drive folder with all current members ───
-    if (memberIds !== undefined && updated.driveFolderId) {
+    // ── Add new members to Shared Drive ─────────────────────
+    if (memberIds !== undefined) {
       const emails = updated.members.map((m) => m.user.email).filter(Boolean)
-      setImmediate(() => googleDrive.shareFolderWithMany(updated.driveFolderId!, emails as string[]))
+      setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
     }
 
     return reply.send({ board: updated })
@@ -275,13 +275,21 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Notify new members added to the column ──────────────
+    // ── Notify new members + add to Shared Drive ───────────
     if (prevColumn && ownerIds && ownerIds.length > 0) {
       const prevMemberIds = new Set(prevColumn.columnMembers.map((m) => m.userId))
       const newMembers = column.columnMembers.filter((m) => !prevMemberIds.has(m.user.id))
 
       setImmediate(async () => {
+        const newEmails: string[] = []
         for (const m of newMembers) {
+          // Add to Shared Drive
+          const userWithEmail = await prisma.user.findUnique({
+            where: { id: m.user.id }, select: { email: true },
+          })
+          if (userWithEmail?.email) newEmails.push(userWithEmail.email)
+
+          // WhatsApp notification
           if (!m.user.phoneWhatsapp) continue
           try {
             await whatsapp.notifyAnnouncement({
@@ -294,6 +302,9 @@ export async function boardRoutes(app: FastifyInstance) {
           } catch (err) {
             console.error('WhatsApp column member notify error:', err)
           }
+        }
+        if (newEmails.length > 0) {
+          await googleDrive.addMembersToSharedDrive(newEmails)
         }
       })
     }
