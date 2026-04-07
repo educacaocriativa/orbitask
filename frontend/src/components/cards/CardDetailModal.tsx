@@ -178,6 +178,30 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                   </span>
                 ))}
               </div>
+
+              {/* Google Drive folder link */}
+              {card.driveFolderUrl && (
+                <a
+                  href={card.driveFolderUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={cn(
+                    'mt-3 flex items-center gap-2.5 px-3 py-2.5 rounded-xl w-full transition-all',
+                    'border border-blue-500/30 hover:border-blue-400/60',
+                    'bg-blue-500/8 hover:bg-blue-500/18',
+                  )}
+                >
+                  <span className="text-base">📁</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-display font-semibold text-blue-300">
+                      Pasta do Google Drive
+                    </p>
+                    <p className="text-[11px] text-white/35 font-body mt-0.5">
+                      Clique para depositar ou buscar arquivos desta etapa →
+                    </p>
+                  </div>
+                </a>
+              )}
             </div>
 
             {/* Sections */}

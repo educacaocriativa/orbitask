@@ -80,9 +80,9 @@ export async function boardRoutes(app: FastifyInstance) {
           where: { id: board.id },
           data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
         })
-        // Add all members to Shared Drive
+        // Share board folder with all members
         const emails = board.members.map((m) => m.user.email).filter(Boolean)
-        setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
+        setImmediate(() => googleDrive.shareFolderWithMany(folder.id, emails as string[]))
       }
     } catch (err) {
       console.error('Drive board folder error:', err)
@@ -132,10 +132,10 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Add new members to Shared Drive ─────────────────────
-    if (memberIds !== undefined) {
+    // ── Share board Drive folder with all current members ───
+    if (memberIds !== undefined && updated.driveFolderId) {
       const emails = updated.members.map((m) => m.user.email).filter(Boolean)
-      setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
+      setImmediate(() => googleDrive.shareFolderWithMany(updated.driveFolderId!, emails as string[]))
     }
 
     return reply.send({ board: updated })
