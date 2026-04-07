@@ -357,6 +357,32 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send(csv)
   })
 
+  // ── POST /admin/reset-database — Keep only admin user ────
+  app.post('/admin/reset-database', { preHandler: [requireAdmin()] }, async (request, reply) => {
+    const { confirm } = request.body as { confirm?: string }
+    if (confirm !== 'CONFIRMAR_RESET') {
+      return reply.status(400).send({ error: 'Send { "confirm": "CONFIRMAR_RESET" } to proceed' })
+    }
+
+    // Delete in dependency order
+    await prisma.announcementRead.deleteMany()
+    await prisma.announcementReply.deleteMany()
+    await prisma.announcement.deleteMany()
+    await prisma.notificationQueue.deleteMany()
+    await prisma.mention.deleteMany()
+    await prisma.file.deleteMany()
+    await prisma.cardSection.deleteMany()
+    await prisma.card.deleteMany()
+    await prisma.columnMember.deleteMany()
+    await prisma.column.deleteMany()
+    await prisma.boardMember.deleteMany()
+    await prisma.board.deleteMany()
+    await prisma.accessLog.deleteMany()
+    await prisma.user.deleteMany({ where: { role: { not: 'ADMIN' } } })
+
+    return reply.send({ ok: true, message: 'Database reset — only ADMIN users remain' })
+  })
+
   // ── GET /admin/drive/health — Diagnose Drive connection ──
   app.get('/admin/drive/health', { preHandler: [requireAdmin()] }, async (request, reply) => {
     return reply.send({
