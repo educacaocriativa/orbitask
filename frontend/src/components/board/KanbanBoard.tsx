@@ -5,9 +5,9 @@ import {
   useSensor, useSensors, closestCorners,
   type DragStartEvent, type DragEndEvent, type DragOverEvent,
 } from '@dnd-kit/core'
-import { arrayMove } from '@dnd-kit/sortable'
+import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useBoardStore, type Card } from '@/stores/boardStore'
+import { useBoardStore, type Card, type Column } from '@/stores/boardStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useIsCoordinator } from '@/hooks/useIsCoordinator'
 import { KanbanColumn } from './KanbanColumn'
@@ -24,10 +24,12 @@ interface KanbanBoardProps {
 }
 
 export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: KanbanBoardProps) {
-  const { board, setActiveCard, activeCard, optimisticMove, moveCard, reorderCard, openCardId, setOpenCard } = useBoardStore()
+  const { board, setActiveCard, activeCard, optimisticMove, moveCard, reorderCard, reorderColumns, openCardId, setOpenCard } = useBoardStore()
   const currentUser   = useAuthStore((s) => s.user)
   const isCoordinator = useIsCoordinator()
+  const isAdmin       = currentUser?.role === 'ADMIN'
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null)
+  const [activeColumn, setActiveColumn]         = useState<Column | null>(null)
   const [pendingMove, setPendingMove] = useState<{
     cardId: string; fromColumnId: string; toColumnId: string; position: number
   } | null>(null)
@@ -37,8 +39,13 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: 
   )
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    const card = event.active.data.current?.card as Card
-    if (card) setActiveCard(card)
+    const type = event.active.data.current?.type
+    if (type === 'column') {
+      setActiveColumn(event.active.data.current?.column as Column)
+    } else {
+      const card = event.active.data.current?.card as Card
+      if (card) setActiveCard(card)
+    }
   }, [setActiveCard])
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
@@ -52,9 +59,22 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: 
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
-    setActiveCard(null)
     setDragOverColumnId(null)
 
+    // ── Column reorder ────────────────────────────────────────
+    if (active.data.current?.type === 'column') {
+      setActiveColumn(null)
+      if (!over || !board || active.id === over.id) return
+      const oldIndex = board.columns.findIndex((c) => c.id === active.id)
+      const newIndex = board.columns.findIndex((c) => c.id === over.id)
+      if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+      const newOrder = arrayMove(board.columns, oldIndex, newIndex)
+      reorderColumns(boardId, newOrder.map((c) => c.id))
+        .catch(() => toast.error('Erro ao reordenar etapas'))
+      return
+    }
+
+    setActiveCard(null)
     if (!over || !board || !activeCard) return
 
     const activeCardId = active.id as string
@@ -150,14 +170,16 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: 
         onDragEnd={handleDragEnd}
       >
         <div className="board-canvas scrollbar-space pt-4">
-          {displayBoard.columns.map((column) => (
-            <KanbanColumn
-              key={column.id}
-              column={column}
-              boardId={boardId}
-              onArchive={onArchive}
-            />
-          ))}
+          <SortableContext items={displayBoard.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+            {displayBoard.columns.map((column) => (
+              <KanbanColumn
+                key={column.id}
+                column={column}
+                boardId={boardId}
+                onArchive={onArchive}
+              />
+            ))}
+          </SortableContext>
 
           {/* Add column placeholder */}
           <motion.div

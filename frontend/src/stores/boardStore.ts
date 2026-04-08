@@ -65,6 +65,8 @@ interface BoardState {
   fetchBoard: (id: string) => Promise<void>
   moveCard: (cardId: string, targetColumnId: string, position: number, deadline: string) => Promise<{ driveFolderUrl?: string | null; previousDriveFolderUrl?: string | null }>
   reorderCard: (columnId: string, cardIds: string[]) => Promise<void>
+  reorderColumns: (boardId: string, columnIds: string[]) => Promise<void>
+  deleteColumn: (columnId: string) => Promise<void>
   addCard: (boardId: string, data: Partial<Card> & { columnId: string }) => Promise<void>
   updateCard: (cardId: string, data: Partial<Card>) => Promise<void>
   archiveCard: (cardId: string) => Promise<void>
@@ -140,6 +142,25 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
 
   reorderCard: async (columnId, cardIds) => {
     await api.patch('/cards/reorder', { columnId, cardIds })
+  },
+
+  reorderColumns: async (boardId, columnIds) => {
+    await api.patch(`/boards/${boardId}/columns/reorder`, { columnIds })
+    set((state) => {
+      if (!state.board) return state
+      const reordered = columnIds
+        .map((id) => state.board!.columns.find((c) => c.id === id))
+        .filter(Boolean) as typeof state.board.columns
+      return { board: { ...state.board, columns: reordered } }
+    })
+  },
+
+  deleteColumn: async (columnId) => {
+    await api.delete(`/columns/${columnId}`)
+    set((state) => {
+      if (!state.board) return state
+      return { board: { ...state.board, columns: state.board.columns.filter((c) => c.id !== columnId) } }
+    })
   },
 
   addCard: async (boardId, cardData) => {

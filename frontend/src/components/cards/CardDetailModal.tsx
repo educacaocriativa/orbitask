@@ -20,6 +20,15 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
   const [savingSection, setSavingSection]   = useState<string | null>(null)
   const [editingMentionId, setEditingMentionId] = useState<string | null>(null)
   const [savingReply, setSavingReply]           = useState<string | null>(null)
+  const [editMode, setEditMode]             = useState(false)
+  const [editTitle, setEditTitle]           = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editPriority, setEditPriority]     = useState('MEDIUM')
+  const [editTags, setEditTags]             = useState('')
+  const [editDeadline, setEditDeadline]     = useState('')
+  const [savingCard, setSavingCard]         = useState(false)
+
+  const isAdmin = user?.role === 'ADMIN'
 
   useEffect(() => {
     api.get(`/cards/${cardId}`)
@@ -27,6 +36,38 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
       .catch(() => toast.error('Erro ao carregar card'))
       .finally(() => setIsLoading(false))
   }, [cardId])
+
+  function openEditMode() {
+    if (!card) return
+    setEditTitle(card.title)
+    setEditDescription(card.description ?? '')
+    setEditPriority(card.priority ?? 'MEDIUM')
+    setEditTags((card.tags ?? []).join(', '))
+    setEditDeadline(card.deadline ? card.deadline.substring(0, 16) : '')
+    setEditMode(true)
+  }
+
+  async function saveCard() {
+    setSavingCard(true)
+    try {
+      const tags = editTags.split(',').map((t) => t.trim()).filter(Boolean)
+      await api.patch(`/cards/${cardId}`, {
+        title: editTitle.trim(),
+        description: editDescription.trim() || null,
+        priority: editPriority,
+        tags,
+        deadline: editDeadline || null,
+      })
+      const { data } = await api.get(`/cards/${cardId}`)
+      setCard(data.card)
+      setEditMode(false)
+      toast.success('Card atualizado ✨')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao salvar card')
+    } finally {
+      setSavingCard(false)
+    }
+  }
 
   // Check if the current user is the owner of a section OR is an admin
   function canEditSection(section: any): boolean {
@@ -136,6 +177,44 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
           <>
             {/* Header */}
             <div className="px-6 pt-5 pb-4 border-b border-white/8">
+              {/* Edit form — Admin only */}
+              {editMode ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-display font-black text-white/60 tracking-widest uppercase">✏️ Editando Card</span>
+                    <button onClick={() => setEditMode(false)} className="text-white/35 hover:text-white/80 text-xl">✕</button>
+                  </div>
+                  <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="Título" className="w-full px-3 py-2 rounded-xl text-sm font-body input-space" />
+                  <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)}
+                    placeholder="Descrição (opcional)" rows={2}
+                    className="w-full px-3 py-2 rounded-xl text-sm font-body input-space resize-none" />
+                  <div className="flex gap-2">
+                    <select value={editPriority} onChange={(e) => setEditPriority(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-xl text-sm font-body input-space">
+                      <option value="LOW">🟢 Baixa</option>
+                      <option value="MEDIUM">🟡 Média</option>
+                      <option value="HIGH">🔴 Alta</option>
+                      <option value="CRITICAL">🚨 Crítica</option>
+                    </select>
+                    <input type="datetime-local" value={editDeadline} onChange={(e) => setEditDeadline(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-xl text-sm font-body input-space" />
+                  </div>
+                  <input value={editTags} onChange={(e) => setEditTags(e.target.value)}
+                    placeholder="Tags (separadas por vírgula)" className="w-full px-3 py-2 rounded-xl text-sm font-body input-space" />
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={() => setEditMode(false)}
+                      className="flex-1 py-2 rounded-xl text-sm font-body border border-white/15 text-white/60 hover:bg-white/5 transition-all">
+                      Cancelar
+                    </button>
+                    <button onClick={saveCard} disabled={savingCard || !editTitle.trim()}
+                      className="flex-[2] py-2 rounded-xl text-sm font-display font-black text-white disabled:opacity-40 transition-all"
+                      style={{ background: 'linear-gradient(135deg, #7c3aed, #06b6d4)' }}>
+                      {savingCard ? '⚡ Salvando...' : '✅ Salvar'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div className="flex items-start gap-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1.5">
@@ -155,8 +234,17 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                     <p className="text-sm text-white/70 font-body font-medium mt-1 leading-relaxed">{card.description}</p>
                   )}
                 </div>
-                <button onClick={onClose} className="text-white/35 hover:text-white/80 transition-colors text-xl mt-0.5">✕</button>
+                <div className="flex items-center gap-1.5">
+                  {isAdmin && (
+                    <button onClick={openEditMode} title="Editar card"
+                      className="flex items-center justify-center w-7 h-7 rounded-lg text-white/40 border border-white/10 hover:text-white hover:border-neon-violet/50 hover:bg-neon-violet/15 transition-all text-xs">
+                      ✏️
+                    </button>
+                  )}
+                  <button onClick={onClose} className="text-white/35 hover:text-white/80 transition-colors text-xl mt-0.5">✕</button>
+                </div>
               </div>
+              )}
 
               {/* Meta */}
               <div className="flex items-center flex-wrap gap-2 mt-3">

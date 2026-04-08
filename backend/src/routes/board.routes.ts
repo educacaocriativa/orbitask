@@ -312,6 +312,36 @@ export async function boardRoutes(app: FastifyInstance) {
     return reply.send({ column })
   })
 
+  // ── DELETE /columns/:id — Admin/Coordinator only ────────
+  app.delete('/columns/:id', { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId  = request.user.id
+    const isAdmin = request.user.role === 'ADMIN'
+
+    const column = await prisma.column.findUnique({
+      where: { id },
+      include: { _count: { select: { cards: true } } },
+    })
+    if (!column) throw new AppError('Column not found', 404)
+
+    const isCoord = await isCoordinator(userId, column.boardId)
+    if (!isAdmin && !isCoord) throw new AppError('Sem permissão para excluir etapas', 403)
+
+    const activeCards = await prisma.card.count({
+      where: { currentColumnId: id, isArchived: false },
+    })
+    if (activeCards > 0) {
+      throw new AppError(`Esta etapa possui ${activeCards} card(s) ativo(s). Mova ou arquive-os antes de excluir.`, 400)
+    }
+
+    // Delete sections referencing this column, then column members, then column
+    await prisma.cardSection.deleteMany({ where: { columnId: id } })
+    await prisma.columnMember.deleteMany({ where: { columnId: id } })
+    await prisma.column.delete({ where: { id } })
+
+    return reply.send({ ok: true })
+  })
+
   // ── PATCH /boards/:boardId/columns/reorder ───────────────
   app.patch('/boards/:boardId/columns/reorder', { preHandler: [authenticate] }, async (request, reply) => {
     const { columnIds } = request.body as { columnIds: string[] }
