@@ -312,6 +312,33 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
 
             </div>
 
+            {/* RECURSOS — destaque para todos os usuários */}
+            {card.resourcesFolderUrl && (
+              <div className="px-6 pb-3">
+                <a
+                  href={card.resourcesFolderUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all group"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(234,179,8,0.12), rgba(234,179,8,0.06))',
+                    border: '1px solid rgba(234,179,8,0.35)',
+                  }}
+                >
+                  <span className="text-xl shrink-0">📦</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-display font-black tracking-widest text-yellow-300 uppercase">
+                      Recursos
+                    </p>
+                    <p className="text-[11px] text-yellow-200/45 font-body mt-0.5">
+                      Pasta compartilhada com materiais de apoio desta missão →
+                    </p>
+                  </div>
+                  <span className="text-yellow-400/40 group-hover:text-yellow-300 group-hover:translate-x-0.5 transition-all text-lg">→</span>
+                </a>
+              </div>
+            )}
+
             {/* Sections */}
             <div className="flex-1 overflow-y-auto scrollbar-space px-6 py-5 space-y-7">
               {card.sections?.length === 0 && (

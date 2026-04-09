@@ -76,6 +76,11 @@ export class GoogleDriveService {
     return this.createFolder(name, columnFolderId)
   }
 
+  // ── Create RECURSOS folder inside a card's section folder ─
+  async createResourcesFolder(parentFolderId: string): Promise<{ id: string; url: string } | null> {
+    return this.createFolder('RECURSOS', parentFolderId)
+  }
+
   // ── Rename an existing folder ────────────────────────────
   async renameFolder(folderId: string, newName: string): Promise<void> {
     if (!this.drive) return

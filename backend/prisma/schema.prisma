@@ -207,9 +207,11 @@ model Card {
   lastMovedByUserId      String?   @map("last_moved_by_user_id")
   columnEnteredAt        DateTime? @map("column_entered_at")
 
-  driveFolderId        String? @map("drive_folder_id")
-  driveFolderUrl       String? @map("drive_folder_url") @db.Text
+  driveFolderId          String? @map("drive_folder_id")
+  driveFolderUrl         String? @map("drive_folder_url") @db.Text
   previousDriveFolderUrl String? @map("previous_drive_folder_url") @db.Text
+  resourcesFolderId      String? @map("resources_folder_id")
+  resourcesFolderUrl     String? @map("resources_folder_url") @db.Text
 
   currentColumnId String @map("current_column_id")
   currentColumn   Column @relation(fields: [currentColumnId], references: [id])

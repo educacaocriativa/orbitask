@@ -36,6 +36,7 @@ export interface Card {
   // Google Drive
   driveFolderUrl?: string | null
   previousDriveFolderUrl?: string | null
+  resourcesFolderUrl?: string | null
 }
 
 export interface Column {

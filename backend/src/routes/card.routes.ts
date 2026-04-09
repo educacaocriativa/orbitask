@@ -50,20 +50,35 @@ export async function cardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Create Drive folder & section ────────────────────────
+    // ── Create Drive folder, RECURSOS subfolder & section ────
     let sectionDriveFolderId: string | null = null
     let sectionDriveFolderUrl: string | null = null
+    let resourcesFolderId: string | null = null
+    let resourcesFolderUrl: string | null = null
 
     if (column.driveFolderId) {
       try {
-        // Folder named after COLUMN OWNER (not the creator)
+        // Section folder named after COLUMN OWNER
         const folder = await googleDrive.createCardFolder(card.title, column.owner.name, column.driveFolderId)
         if (folder) {
           sectionDriveFolderId = folder.id
           sectionDriveFolderUrl = folder.url
+
+          // RECURSOS subfolder inside the section folder
+          const recursos = await googleDrive.createResourcesFolder(folder.id)
+          if (recursos) {
+            resourcesFolderId = recursos.id
+            resourcesFolderUrl = recursos.url
+          }
+
           await prisma.card.update({
             where: { id: card.id },
-            data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
+            data: {
+              driveFolderId: folder.id,
+              driveFolderUrl: folder.url,
+              resourcesFolderId,
+              resourcesFolderUrl,
+            },
           })
         }
       } catch (err) {
