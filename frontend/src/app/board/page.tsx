@@ -122,7 +122,8 @@ export default function BoardListPage() {
                 <span></span>
               </div>
 
-              {/* Rows */}
+              {/* Rows — max 10 visible, scroll after */}
+              <div className="overflow-y-auto scrollbar-space" style={{ maxHeight: 520 }}>
               {tasks.map((task, i) => {
                 const prio = PRIORITY_STYLE[task.priority] ?? PRIORITY_STYLE.LOW
                 const deadlineDate = task.deadline ? new Date(task.deadline) : null
@@ -188,6 +189,7 @@ export default function BoardListPage() {
                   </motion.div>
                 )
               })}
+              </div>
             </motion.div>
           )}
         </section>
