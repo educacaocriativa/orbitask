@@ -218,6 +218,7 @@ export default function BoardPage() {
             filteredBoard={filteredBoard}
             onCardMoved={() => broadcast('CARD_MOVED', {})}
             onArchive={isPrivileged ? handleArchive : undefined}
+            onArchived={isPrivileged ? () => setArchivedKey((k) => k + 1) : undefined}
           />
         </div>
 

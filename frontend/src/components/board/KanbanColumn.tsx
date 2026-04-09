@@ -163,15 +163,15 @@ export function KanbanColumn({ column, boardId, onArchive }: KanbanColumnProps) 
             </div>
           </div>
 
-          {/* Cards area */}
+          {/* Cards area — max 10 cards visible, scrollable after */}
           <SortableContext items={cardIds} strategy={verticalListSortingStrategy}>
             <div
               ref={setDropRef}
               className={cn(
-                'flex flex-col gap-2.5 flex-1 p-2 rounded-b-2xl glass transition-all duration-200',
+                'flex flex-col gap-2.5 p-2 rounded-b-2xl glass transition-all duration-200 overflow-y-auto scrollbar-space',
                 isOver && 'drop-zone-active',
               )}
-              style={{ minHeight: 80 }}
+              style={{ minHeight: 80, maxHeight: 840 }}
             >
               <AnimatePresence mode="popLayout">
                 {column.cards.map((card, index) => {

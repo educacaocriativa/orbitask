@@ -21,9 +21,10 @@ interface KanbanBoardProps {
   filteredBoard?: import('@/stores/boardStore').Board | null
   onCardMoved?: () => void
   onArchive?: (cardId: string) => void
+  onArchived?: () => void
 }
 
-export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: KanbanBoardProps) {
+export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, onArchived }: KanbanBoardProps) {
   const { board, setActiveCard, activeCard, optimisticMove, moveCard, reorderCard, reorderColumns, openCardId, setOpenCard } = useBoardStore()
   const currentUser   = useAuthStore((s) => s.user)
   const isCoordinator = useIsCoordinator()
@@ -230,6 +231,7 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive }: 
           <CardDetailModal
             cardId={openCardId}
             onClose={() => setOpenCard(null)}
+            onArchived={onArchived}
           />
         )}
       </AnimatePresence>

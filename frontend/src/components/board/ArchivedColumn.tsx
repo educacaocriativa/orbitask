@@ -85,7 +85,7 @@ export function ArchivedColumn({ boardId, onHasCards }: ArchivedColumnProps) {
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="flex flex-col gap-2 p-2 rounded-b-2xl border-b border-x border-red-500/15 overflow-y-auto scrollbar-space"
-            style={{ background: 'rgba(239,68,68,0.03)', maxHeight: 'calc(100vh - 180px)' }}
+            style={{ background: 'rgba(239,68,68,0.03)', maxHeight: 840 }}
           >
             {isLoading && (
               <div className="flex items-center justify-center py-8">

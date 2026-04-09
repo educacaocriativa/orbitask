@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
+import { useBoardStore } from '@/stores/boardStore'
 import { Avatar } from '@/components/ui/Avatar'
 import { cn, formatDeadline, getPriorityIcon, getPriorityLabel, isOverdue, formatBytes } from '@/lib/utils'
 import { RichTextEditor } from '../sections/RichTextEditor'
@@ -11,10 +12,12 @@ import toast from 'react-hot-toast'
 interface CardDetailModalProps {
   cardId: string
   onClose: () => void
+  onArchived?: () => void
 }
 
-export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
+export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModalProps) {
   const { user }                            = useAuthStore()
+  const { archiveCard }                     = useBoardStore()
   const [card, setCard]                     = useState<any>(null)
   const [isLoading, setIsLoading]           = useState(true)
   const [savingSection, setSavingSection]   = useState<string | null>(null)
@@ -27,6 +30,8 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
   const [editTags, setEditTags]             = useState('')
   const [editDeadline, setEditDeadline]     = useState('')
   const [savingCard, setSavingCard]         = useState(false)
+  const [confirmAbort, setConfirmAbort]     = useState(false)
+  const [aborting, setAborting]             = useState(false)
 
   const isAdmin = user?.role === 'ADMIN'
 
@@ -66,6 +71,20 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
       toast.error(err?.response?.data?.error ?? 'Erro ao salvar card')
     } finally {
       setSavingCard(false)
+    }
+  }
+
+  async function abortMission() {
+    setAborting(true)
+    try {
+      await archiveCard(cardId)
+      toast.success('Missão abortada 🚫')
+      onArchived?.()
+      onClose()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao abortar missão')
+      setAborting(false)
+      setConfirmAbort(false)
     }
   }
 
@@ -235,11 +254,35 @@ export function CardDetailModal({ cardId, onClose }: CardDetailModalProps) {
                   )}
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {isAdmin && (
+                  {isAdmin && !confirmAbort && (
                     <button onClick={openEditMode} title="Editar card"
                       className="flex items-center justify-center w-7 h-7 rounded-lg text-white/40 border border-white/10 hover:text-white hover:border-neon-violet/50 hover:bg-neon-violet/15 transition-all text-xs">
                       ✏️
                     </button>
+                  )}
+                  {isAdmin && !confirmAbort && (
+                    <button onClick={() => setConfirmAbort(true)} title="Abortar missão"
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-display font-black tracking-wide text-red-400/70 border border-red-500/20 hover:text-red-300 hover:border-red-500/50 hover:bg-red-500/10 transition-all">
+                      🚫 Abortar
+                    </button>
+                  )}
+                  {isAdmin && confirmAbort && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-red-500/40 bg-red-950/40">
+                      <span className="text-[11px] text-red-300 font-display font-black">Confirmar?</span>
+                      <button
+                        onClick={abortMission}
+                        disabled={aborting}
+                        className="text-[11px] px-2 py-0.5 rounded-md bg-red-600/70 hover:bg-red-600 text-white font-display font-black disabled:opacity-40 transition-all"
+                      >
+                        {aborting ? '⏳' : 'Sim'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmAbort(false)}
+                        className="text-[11px] px-2 py-0.5 rounded-md border border-white/15 text-white/50 hover:text-white/80 font-body transition-all"
+                      >
+                        Não
+                      </button>
+                    </div>
                   )}
                   <button onClick={onClose} className="text-white/35 hover:text-white/80 transition-colors text-xl mt-0.5">✕</button>
                 </div>
