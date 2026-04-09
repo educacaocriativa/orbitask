@@ -405,4 +405,57 @@ export async function boardRoutes(app: FastifyInstance) {
 
     return reply.send({ cards })
   })
+
+  // ── DELETE /boards/:id/archive ───────────────────────────
+  // Admin only — archives a board (hides from all users)
+  app.delete('/boards/:id/archive', { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+
+    const board = await prisma.board.findUnique({ where: { id } })
+    if (!board) throw new AppError('Missão não encontrada', 404)
+    if (board.isArchived) throw new AppError('Missão já está arquivada', 400)
+
+    await prisma.board.update({
+      where: { id },
+      data: { isArchived: true, archivedAt: new Date() },
+    })
+
+    return reply.send({ ok: true })
+  })
+
+  // ── POST /boards/:id/restore ─────────────────────────────
+  // Admin only — restores an archived board
+  app.post('/boards/:id/restore', { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+
+    const board = await prisma.board.findUnique({ where: { id } })
+    if (!board) throw new AppError('Missão não encontrada', 404)
+    if (!board.isArchived) throw new AppError('Missão não está arquivada', 400)
+
+    await prisma.board.update({
+      where: { id },
+      data: { isArchived: false, archivedAt: null },
+    })
+
+    return reply.send({ ok: true })
+  })
+
+  // ── GET /boards/archived ─────────────────────────────────
+  // Admin only — lists all archived boards
+  app.get('/boards/archived', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+
+    const boards = await prisma.board.findMany({
+      where: { isArchived: true },
+      include: {
+        owner: { select: { id: true, name: true, avatarUrl: true } },
+        _count: { select: { columns: true, cards: true } },
+      },
+      orderBy: { archivedAt: 'desc' },
+    })
+
+    return reply.send({ boards })
+  })
 }

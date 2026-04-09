@@ -107,7 +107,8 @@ model Board {
   title       String
   description String? @db.Text
   color       String  @default("#6366f1")
-  isArchived  Boolean @default(false) @map("is_archived")
+  isArchived  Boolean   @default(false) @map("is_archived")
+  archivedAt  DateTime? @map("archived_at")
 
   driveFolderId  String? @map("drive_folder_id")
   driveFolderUrl String? @map("drive_folder_url") @db.Text

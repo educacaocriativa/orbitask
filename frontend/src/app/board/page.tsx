@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import api from '@/lib/api'
 import { Navbar } from '@/components/ui/Navbar'
@@ -14,6 +14,7 @@ interface BoardSummary {
   id: string; title: string; description?: string; color: string
   owner: { id: string; name: string }
   createdAt: string
+  archivedAt?: string
   _count: { columns: number; cards: number }
 }
 
@@ -36,12 +37,17 @@ const PRIORITY_STYLE: Record<string, { label: string; className: string }> = {
 
 export default function BoardListPage() {
   const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN')
-  const [boards, setBoards]         = useState<BoardSummary[]>([])
-  const [tasks, setTasks]           = useState<Task[]>([])
-  const [isLoading, setIsLoading]   = useState(true)
-  const [tasksLoading, setTasksLoading] = useState(true)
-  const [showCreate, setShowCreate]     = useState(false)
-  const [showImport, setShowImport]     = useState(false)
+  const [boards, setBoards]                 = useState<BoardSummary[]>([])
+  const [archivedBoards, setArchivedBoards] = useState<BoardSummary[]>([])
+  const [tasks, setTasks]                   = useState<Task[]>([])
+  const [isLoading, setIsLoading]           = useState(true)
+  const [tasksLoading, setTasksLoading]     = useState(true)
+  const [showCreate, setShowCreate]         = useState(false)
+  const [showImport, setShowImport]         = useState(false)
+  const [confirmAbortId, setConfirmAbortId] = useState<string | null>(null)
+  const [aborting, setAborting]             = useState<string | null>(null)
+  const [restoring, setRestoring]           = useState<string | null>(null)
+  const [showArchived, setShowArchived]     = useState(false)
 
   useEffect(() => {
     api.get('/boards')
@@ -53,7 +59,13 @@ export default function BoardListPage() {
       .then(({ data }) => setTasks(data.tasks))
       .catch(() => {})
       .finally(() => setTasksLoading(false))
-  }, [])
+
+    if (isAdmin) {
+      api.get('/boards/archived')
+        .then(({ data }) => setArchivedBoards(data.boards))
+        .catch(() => {})
+    }
+  }, [isAdmin])
 
   function handleBoardSaved(board: BoardSummary) {
     setBoards((prev) => {
@@ -62,6 +74,40 @@ export default function BoardListPage() {
         ? prev.map((b) => b.id === board.id ? board : b)
         : [board, ...prev]
     })
+  }
+
+  async function abortMission(boardId: string) {
+    setAborting(boardId)
+    try {
+      await api.delete(`/boards/${boardId}/archive`)
+      const aborted = boards.find((b) => b.id === boardId)
+      setBoards((prev) => prev.filter((b) => b.id !== boardId))
+      if (aborted) setArchivedBoards((prev) => [{ ...aborted, archivedAt: new Date().toISOString() }, ...prev])
+      setConfirmAbortId(null)
+      toast.success('Missão abortada 🚫')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao abortar missão')
+    } finally {
+      setAborting(null)
+    }
+  }
+
+  async function restoreMission(boardId: string) {
+    setRestoring(boardId)
+    try {
+      await api.post(`/boards/${boardId}/restore`)
+      const restored = archivedBoards.find((b) => b.id === boardId)
+      setArchivedBoards((prev) => prev.filter((b) => b.id !== boardId))
+      if (restored) {
+        const { archivedAt, ...rest } = restored
+        setBoards((prev) => [rest, ...prev])
+      }
+      toast.success('Missão reintegrada ✓')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao restaurar missão')
+    } finally {
+      setRestoring(null)
+    }
   }
 
   return (
@@ -144,41 +190,21 @@ export default function BoardListPage() {
                       task.isOverdue && 'bg-red-500/4',
                     )}
                   >
-                    {/* Missão */}
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-2 h-2 rounded-full shrink-0" style={{ background: task.board.color }} />
-                      <span className="text-xs font-body font-semibold text-white/70 truncate">
-                        {task.board.title}
-                      </span>
+                      <span className="text-xs font-body font-semibold text-white/70 truncate">{task.board.title}</span>
                     </div>
-
-                    {/* Card */}
-                    <span className="text-xs font-body font-semibold text-white/90 truncate">
-                      {task.title}
-                    </span>
-
-                    {/* Etapa */}
+                    <span className="text-xs font-body font-semibold text-white/90 truncate">{task.title}</span>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: task.currentColumn.color }} />
-                      <span className="text-xs font-body text-white/55 truncate">
-                        {task.currentColumn.title}
-                      </span>
+                      <span className="text-xs font-body text-white/55 truncate">{task.currentColumn.title}</span>
                     </div>
-
-                    {/* Prioridade */}
                     <span className={cn('text-[10px] px-2 py-0.5 rounded-md border font-body font-bold w-fit', prio.className)}>
                       {prio.label}
                     </span>
-
-                    {/* Prazo */}
-                    <span className={cn(
-                      'text-xs font-mono font-bold',
-                      task.isOverdue ? 'text-red-400' : 'text-white/45',
-                    )}>
+                    <span className={cn('text-xs font-mono font-bold', task.isOverdue ? 'text-red-400' : 'text-white/45')}>
                       {task.isOverdue && '⚠ '}{deadlineLabel}
                     </span>
-
-                    {/* Acesso rápido */}
                     <Link
                       href={`/board/${task.board.id}`}
                       className="flex items-center justify-center w-8 h-8 rounded-lg border border-white/10 text-white/35 hover:text-white hover:border-neon-cyan/40 hover:bg-neon-cyan/10 transition-all text-sm"
@@ -194,7 +220,7 @@ export default function BoardListPage() {
           )}
         </section>
 
-        {/* ── Missões ────────────────────────────────────────── */}
+        {/* ── Missões Ativas ─────────────────────────────────── */}
         <section>
           <motion.div
             initial={{ opacity: 0, y: 16 }}
@@ -234,7 +260,6 @@ export default function BoardListPage() {
             )}
           </motion.div>
 
-          {/* Loading */}
           {isLoading && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {[...Array(3)].map((_, i) => (
@@ -243,7 +268,6 @@ export default function BoardListPage() {
             </div>
           )}
 
-          {/* Board grid */}
           {!isLoading && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {boards.map((board, i) => (
@@ -252,6 +276,7 @@ export default function BoardListPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.07 }}
+                  className="relative"
                 >
                   <Link href={`/board/${board.id}`} className="group block">
                     <div className={cn(
@@ -291,6 +316,52 @@ export default function BoardListPage() {
                       </div>
                     </div>
                   </Link>
+
+                  {/* Admin — Abortar Missão (outside Link to avoid nav) */}
+                  {isAdmin && (
+                    <div
+                      className="absolute bottom-3 left-3 z-10"
+                      onClick={(e) => e.preventDefault()}
+                    >
+                      <AnimatePresence mode="wait">
+                        {confirmAbortId === board.id ? (
+                          <motion.div
+                            key="confirm"
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-red-500/50 bg-black/80 backdrop-blur-sm"
+                          >
+                            <span className="text-[11px] text-red-300 font-display font-black">Abortar?</span>
+                            <button
+                              onClick={() => abortMission(board.id)}
+                              disabled={aborting === board.id}
+                              className="text-[11px] px-2 py-0.5 rounded-md bg-red-600 hover:bg-red-500 text-white font-display font-black disabled:opacity-40 transition-all"
+                            >
+                              {aborting === board.id ? '⏳' : 'Sim'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmAbortId(null)}
+                              className="text-[11px] px-2 py-0.5 rounded-md border border-white/20 text-white/55 hover:text-white/80 font-body transition-all"
+                            >
+                              Não
+                            </button>
+                          </motion.div>
+                        ) : (
+                          <motion.button
+                            key="abort-btn"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setConfirmAbortId(board.id)}
+                            className="text-[11px] px-2.5 py-1 rounded-lg border border-red-500/20 text-red-400/55 bg-black/50 hover:border-red-500/55 hover:text-red-300 hover:bg-red-950/70 transition-all font-display font-black backdrop-blur-sm"
+                          >
+                            🚫 Abortar Missão
+                          </motion.button>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
                 </motion.div>
               ))}
 
@@ -308,6 +379,93 @@ export default function BoardListPage() {
             </div>
           )}
         </section>
+
+        {/* ── Missões Abortadas — Admin only ──────────────────── */}
+        {isAdmin && (
+          <section>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center justify-between mb-4 cursor-pointer select-none"
+              onClick={() => setShowArchived((p) => !p)}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-red-500/60" />
+                <p className="text-xs font-display tracking-[0.25em] text-red-400/70 uppercase font-black">
+                  🚫 Missões Abortadas
+                </p>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-red-500/12 border border-red-500/25 text-red-400 font-mono">
+                  {archivedBoards.length}
+                </span>
+              </div>
+              <span className="text-white/25 hover:text-white/60 transition-colors text-xs">
+                {showArchived ? '▲ ocultar' : '▼ exibir'}
+              </span>
+            </motion.div>
+
+            <AnimatePresence>
+              {showArchived && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  {archivedBoards.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 text-center glass rounded-2xl border border-red-500/10">
+                      <span className="text-3xl mb-2">📭</span>
+                      <p className="text-sm text-white/25 font-body">Nenhuma missão abortada</p>
+                    </div>
+                  ) : (
+                    <div className="glass rounded-2xl overflow-hidden border border-red-500/12">
+                      {archivedBoards.map((board, i) => (
+                        <motion.div
+                          key={board.id}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: i * 0.04 }}
+                          className="flex items-center gap-4 px-5 py-3.5 border-b border-red-500/8 last:border-0 hover:bg-red-500/4 transition-colors"
+                        >
+                          {/* Color dot */}
+                          <div className="w-2.5 h-2.5 rounded-full shrink-0 opacity-50" style={{ background: board.color }} />
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-display font-semibold text-white/60 truncate">{board.title}</p>
+                            <div className="flex items-center gap-3 mt-0.5">
+                              <span className="text-[11px] text-white/25 font-body">
+                                📂 {board._count.columns} etapas · 🃏 {board._count.cards} cards
+                              </span>
+                              {board.archivedAt && (
+                                <span className="text-[10px] text-red-400/50 font-mono">
+                                  🚫 {new Date(board.archivedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Restore button */}
+                          <button
+                            onClick={() => restoreMission(board.id)}
+                            disabled={restoring === board.id}
+                            className={cn(
+                              'shrink-0 text-[11px] px-3 py-1.5 rounded-lg border font-display font-black transition-all',
+                              'border-neon-cyan/25 text-neon-cyan/60 bg-neon-cyan/5',
+                              'hover:border-neon-cyan/55 hover:text-neon-cyan hover:bg-neon-cyan/12',
+                              'disabled:opacity-40 disabled:cursor-not-allowed',
+                            )}
+                          >
+                            {restoring === board.id ? '⏳ Reintegrando...' : '↩ Reintegrar Missão'}
+                          </button>
+                        </motion.div>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </section>
+        )}
 
       </main>
 
