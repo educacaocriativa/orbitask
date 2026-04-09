@@ -140,6 +140,11 @@ export async function cardRoutes(app: FastifyInstance) {
       if (body.deadline) updateData.isOverdue = false
     }
 
+    // Fetch current title before updating (needed for Drive rename)
+    const prevCard = body.title
+      ? await prisma.card.findUnique({ where: { id }, select: { title: true } })
+      : null
+
     const card = await prisma.card.update({
       where: { id },
       data: updateData,
@@ -150,6 +155,21 @@ export async function cardRoutes(app: FastifyInstance) {
         },
       },
     })
+
+    // ── Rename Drive section folders if title changed ────────
+    if (body.title && prevCard && body.title !== prevCard.title) {
+      setImmediate(async () => {
+        const sections = await prisma.cardSection.findMany({
+          where: { cardId: id },
+          include: { owner: { select: { name: true } } },
+        })
+        for (const section of sections) {
+          if (!section.driveFolderId) continue
+          const newName = `${body.title}_${section.owner.name}`
+          await googleDrive.renameFolder(section.driveFolderId, newName)
+        }
+      })
+    }
 
     return reply.send({ card })
   })

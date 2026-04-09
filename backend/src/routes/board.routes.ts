@@ -138,6 +138,11 @@ export async function boardRoutes(app: FastifyInstance) {
       setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
     }
 
+    // ── Rename Drive folder if title changed ─────────────────
+    if (body.title && body.title !== board.title && board.driveFolderId) {
+      setImmediate(() => googleDrive.renameFolder(board.driveFolderId!, body.title!))
+    }
+
     return reply.send({ board: updated })
   })
 
@@ -251,6 +256,7 @@ export async function boardRoutes(app: FastifyInstance) {
         ownerId: true,
         title: true,
         boardId: true,
+        driveFolderId: true,
         board: { select: { title: true } },
         columnMembers: { select: { userId: true } },
       },
@@ -307,6 +313,11 @@ export async function boardRoutes(app: FastifyInstance) {
           await googleDrive.addMembersToSharedDrive(newEmails)
         }
       })
+    }
+
+    // ── Rename Drive folder if column title changed ──────────
+    if (body.title && prevColumn?.title !== body.title && prevColumn?.driveFolderId) {
+      setImmediate(() => googleDrive.renameFolder(prevColumn.driveFolderId!, body.title!))
     }
 
     return reply.send({ column })

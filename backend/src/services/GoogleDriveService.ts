@@ -76,6 +76,20 @@ export class GoogleDriveService {
     return this.createFolder(name, columnFolderId)
   }
 
+  // ── Rename an existing folder ────────────────────────────
+  async renameFolder(folderId: string, newName: string): Promise<void> {
+    if (!this.drive) return
+    try {
+      await this.drive.files.update({
+        fileId: folderId,
+        requestBody: { name: newName.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 100) },
+        supportsAllDrives: true,
+      })
+    } catch (err) {
+      console.warn('GoogleDrive renameFolder error:', (err as any)?.message)
+    }
+  }
+
   // ── Share folder with a user (writer) ────────────────────
   async shareFolder(folderId: string, email: string): Promise<void> {
     if (!this.drive) return
