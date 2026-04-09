@@ -23,6 +23,12 @@ export async function cardRoutes(app: FastifyInstance) {
     })
     if (!column) throw new AppError('Column not found', 404)
 
+    // ── Duplicate name check ─────────────────────────────────
+    const duplicateCard = await prisma.card.findFirst({
+      where: { boardId, title: { equals: body.title, mode: 'insensitive' }, isArchived: false },
+    })
+    if (duplicateCard) throw new AppError(`Já existe um card chamado "${body.title}" nesta missão.`, 400)
+
     const lastCard = await prisma.card.findFirst({
       where: { currentColumnId: body.columnId },
       orderBy: { position: 'desc' },
@@ -155,10 +161,18 @@ export async function cardRoutes(app: FastifyInstance) {
       if (body.deadline) updateData.isOverdue = false
     }
 
-    // Fetch current title before updating (needed for Drive rename)
+    // Fetch current card (needed for duplicate check + Drive rename)
     const prevCard = body.title
-      ? await prisma.card.findUnique({ where: { id }, select: { title: true } })
+      ? await prisma.card.findUnique({ where: { id }, select: { title: true, boardId: true } })
       : null
+
+    // ── Duplicate name check on rename ───────────────────────
+    if (body.title && prevCard && body.title.toLowerCase() !== prevCard.title.toLowerCase()) {
+      const duplicateCard = await prisma.card.findFirst({
+        where: { boardId: prevCard.boardId, title: { equals: body.title, mode: 'insensitive' }, isArchived: false, NOT: { id } },
+      })
+      if (duplicateCard) throw new AppError(`Já existe um card chamado "${body.title}" nesta missão.`, 400)
+    }
 
     const card = await prisma.card.update({
       where: { id },

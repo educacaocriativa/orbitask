@@ -202,6 +202,12 @@ export async function boardRoutes(app: FastifyInstance) {
     const board = await prisma.board.findUnique({ where: { id: boardId } })
     if (!board) throw new AppError('Board not found', 404)
 
+    // ── Duplicate name check ─────────────────────────────────
+    const duplicateColumn = await prisma.column.findFirst({
+      where: { boardId, title: { equals: body.title, mode: 'insensitive' } },
+    })
+    if (duplicateColumn) throw new AppError(`Já existe uma etapa chamada "${body.title}" nesta missão.`, 400)
+
     const lastColumn = await prisma.column.findFirst({
       where: { boardId },
       orderBy: { position: 'desc' },
@@ -261,6 +267,14 @@ export async function boardRoutes(app: FastifyInstance) {
         columnMembers: { select: { userId: true } },
       },
     })
+
+    // ── Duplicate name check on rename ──────────────────────
+    if (body.title && prevColumn && body.title.toLowerCase() !== prevColumn.title.toLowerCase()) {
+      const duplicateColumn = await prisma.column.findFirst({
+        where: { boardId: prevColumn.boardId, title: { equals: body.title, mode: 'insensitive' }, NOT: { id } },
+      })
+      if (duplicateColumn) throw new AppError(`Já existe uma etapa chamada "${body.title}" nesta missão.`, 400)
+    }
 
     const { ownerIds, ...rest } = body
 
