@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useBoardStore } from '@/stores/boardStore'
 import { useBoardSocket } from '@/hooks/useBoardSocket'
 import { Navbar } from '@/components/ui/Navbar'
@@ -30,10 +30,10 @@ export default function BoardPage() {
     (m) => m.userId === currentUser?.id && m.role === 'COORDINATOR'
   ) ?? false
   const isPrivileged = isAdmin || isCoordinator
-  const [showAddColumn,  setShowAddColumn]  = useState(false)
-  const [showEditBoard,  setShowEditBoard]  = useState(false)
-  const [archivedKey,    setArchivedKey]    = useState(0)
-  const [hasArchived,    setHasArchived]    = useState(false)
+  const [showAddColumn,   setShowAddColumn]   = useState(false)
+  const [showEditBoard,   setShowEditBoard]   = useState(false)
+  const [showArchived,    setShowArchived]    = useState(false)
+  const [archivedKey,     setArchivedKey]     = useState(0)
   const [filters, setFilters] = useState<FilterState>({
     priority: null, isOverdue: null, columnId: null, tag: null,
   })
@@ -170,6 +170,24 @@ export default function BoardPage() {
           onChange={setFilters}
         />
 
+        {/* Archived cards button — Admin or Coordinator */}
+        {isPrivileged && (
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setShowArchived(true)}
+            className={cn(
+              'shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg',
+              'text-xs font-display tracking-wider text-white/60',
+              'border border-white/10 hover:border-red-500/40',
+              'hover:text-white/90 hover:bg-red-500/8 transition-all duration-200',
+            )}
+          >
+            <span>🗃</span>
+            <span className="hidden sm:inline">Arquivados</span>
+          </motion.button>
+        )}
+
         {/* Edit mission button — Admin or Coordinator */}
         {isPrivileged && (
           <motion.button
@@ -211,27 +229,27 @@ export default function BoardPage() {
       {isPrivileged && <OverdueBanner key={boardId} boardId={boardId} />}
 
       {/* ── Kanban Board ─────────────────────────────── */}
-      <div className="flex-1 overflow-hidden flex">
-        <div className="flex-1 overflow-hidden">
-          <KanbanBoard
-            boardId={boardId}
-            filteredBoard={filteredBoard}
-            onCardMoved={() => broadcast('CARD_MOVED', {})}
-            onArchive={isPrivileged ? handleArchive : undefined}
-            onArchived={isPrivileged ? () => setArchivedKey((k) => k + 1) : undefined}
-          />
-        </div>
-
-        {/* ── Archived column — Privileged only, only when cards exist ── */}
-        {isPrivileged && (
-          <div
-            className="shrink-0 overflow-y-auto px-3 pt-4 pb-4 transition-all duration-300"
-            style={{ width: hasArchived ? 'calc(var(--col-width) + 1.5rem)' : '0', overflow: hasArchived ? undefined : 'hidden', padding: hasArchived ? undefined : '0' }}
-          >
-            <ArchivedColumn key={archivedKey} boardId={boardId} onHasCards={setHasArchived} />
-          </div>
-        )}
+      <div className="flex-1 overflow-hidden">
+        <KanbanBoard
+          boardId={boardId}
+          filteredBoard={filteredBoard}
+          onCardMoved={() => broadcast('CARD_MOVED', {})}
+          onArchive={isPrivileged ? handleArchive : undefined}
+          onArchived={isPrivileged ? () => setArchivedKey((k) => k + 1) : undefined}
+        />
       </div>
+
+      {/* ── Archived cards modal ─────────────────────── */}
+      <AnimatePresence>
+        {showArchived && isPrivileged && (
+          <ArchivedColumn
+            key={archivedKey}
+            boardId={boardId}
+            onClose={() => setShowArchived(false)}
+            onRestored={() => setArchivedKey((k) => k + 1)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── Column manager ───────────────────────────── */}
       <ColumnManagerModal
