@@ -483,4 +483,44 @@ export async function boardRoutes(app: FastifyInstance) {
 
     return reply.send({ boards })
   })
+
+  // ── POST /admin/backfill-resources-folders ───────────────
+  // One-time migration: creates RECURSOS folder for cards that don't have one
+  app.post('/admin/backfill-resources-folders', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!googleDrive.isConfigured) throw new AppError('Google Drive não configurado', 503)
+
+    // Find cards that have a section folder but no RECURSOS folder yet
+    const cards = await prisma.card.findMany({
+      where: { driveFolderId: { not: null }, resourcesFolderId: null },
+      select: { id: true, title: true, driveFolderId: true },
+    })
+
+    let created = 0
+    let failed  = 0
+
+    for (const card of cards) {
+      try {
+        const folder = await googleDrive.createResourcesFolder(card.driveFolderId!)
+        if (folder) {
+          await prisma.card.update({
+            where: { id: card.id },
+            data: { resourcesFolderId: folder.id, resourcesFolderUrl: folder.url },
+          })
+          created++
+        } else {
+          failed++
+        }
+      } catch {
+        failed++
+      }
+    }
+
+    return reply.send({
+      total:   cards.length,
+      created,
+      failed,
+      message: `${created} pasta(s) RECURSOS criada(s), ${failed} falha(s).`,
+    })
+  })
 }
