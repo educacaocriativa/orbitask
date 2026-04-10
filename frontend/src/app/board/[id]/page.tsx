@@ -7,6 +7,7 @@ import { useBoardSocket } from '@/hooks/useBoardSocket'
 import { Navbar } from '@/components/ui/Navbar'
 import { KanbanBoard } from '@/components/board/KanbanBoard'
 import { ArchivedColumn } from '@/components/board/ArchivedColumn'
+import { ArchivedColumnsModal } from '@/components/board/ArchivedColumnsModal'
 import { OverdueBanner } from '@/components/board/OverdueBanner'
 import { ColumnManagerModal } from '@/components/board/ColumnManagerModal'
 import { BoardManagerModal } from '@/components/board/BoardManagerModal'
@@ -32,8 +33,10 @@ export default function BoardPage() {
   const isPrivileged = isAdmin || isCoordinator
   const [showAddColumn,   setShowAddColumn]   = useState(false)
   const [showEditBoard,   setShowEditBoard]   = useState(false)
-  const [showArchived,    setShowArchived]    = useState(false)
-  const [archivedKey,     setArchivedKey]     = useState(0)
+  const [showArchived,         setShowArchived]         = useState(false)
+  const [showArchivedColumns,  setShowArchivedColumns]  = useState(false)
+  const [archivedKey,          setArchivedKey]          = useState(0)
+  const [archivedColumnsKey,   setArchivedColumnsKey]   = useState(0)
   const [filters, setFilters] = useState<FilterState>({
     priority: null, isOverdue: null, columnId: null, tag: null,
   })
@@ -188,6 +191,24 @@ export default function BoardPage() {
           </motion.button>
         )}
 
+        {/* Archived columns button — Admin or Coordinator */}
+        {isPrivileged && (
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setShowArchivedColumns(true)}
+            className={cn(
+              'shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg',
+              'text-xs font-display tracking-wider text-white/60',
+              'border border-white/10 hover:border-amber-500/40',
+              'hover:text-white/90 hover:bg-amber-500/8 transition-all duration-200',
+            )}
+          >
+            <span>📂</span>
+            <span className="hidden sm:inline">Etapas</span>
+          </motion.button>
+        )}
+
         {/* Edit mission button — Admin or Coordinator */}
         {isPrivileged && (
           <motion.button
@@ -247,6 +268,18 @@ export default function BoardPage() {
             boardId={boardId}
             onClose={() => setShowArchived(false)}
             onRestored={() => setArchivedKey((k) => k + 1)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Archived columns modal ───────────────────── */}
+      <AnimatePresence>
+        {showArchivedColumns && isPrivileged && (
+          <ArchivedColumnsModal
+            key={archivedColumnsKey}
+            boardId={boardId}
+            onClose={() => setShowArchivedColumns(false)}
+            onRestored={() => setArchivedColumnsKey((k) => k + 1)}
           />
         )}
       </AnimatePresence>

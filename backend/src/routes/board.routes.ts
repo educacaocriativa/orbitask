@@ -132,10 +132,15 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Add new members to Shared Drive ─────────────────────
+    // ── Add new members to Shared Drive + board folder ───────
     if (memberIds !== undefined) {
-      const emails = updated.members.map((m) => m.user.email).filter(Boolean)
-      setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
+      const emails = updated.members.map((m) => m.user.email).filter(Boolean) as string[]
+      setImmediate(async () => {
+        await googleDrive.addMembersToSharedDrive(emails)
+        if (board.driveFolderId) {
+          await googleDrive.shareFolderWithMany(board.driveFolderId, emails)
+        }
+      })
     }
 
     // ── Rename Drive folder if title changed ─────────────────
@@ -412,6 +417,25 @@ export async function boardRoutes(app: FastifyInstance) {
 
     await prisma.column.update({ where: { id }, data: { isArchived: false } })
     return reply.send({ ok: true })
+  })
+
+  // ── GET /boards/:boardId/archived-columns ────────────────
+  app.get('/boards/:boardId/archived-columns', { preHandler: [authenticate] }, async (request, reply) => {
+    const { boardId } = request.params as { boardId: string }
+    const userId  = request.user.id
+    const isAdmin = request.user.role === 'ADMIN'
+    const isCoord = await isCoordinator(userId, boardId)
+    if (!isAdmin && !isCoord) throw new AppError('Acesso negado', 403)
+
+    const columns = await prisma.column.findMany({
+      where: { boardId, isArchived: true },
+      include: {
+        owner: { select: { id: true, name: true, avatarUrl: true } },
+        _count: { select: { cards: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+    return reply.send({ columns })
   })
 
   // ── PATCH /boards/:boardId/columns/reorder ───────────────

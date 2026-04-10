@@ -69,6 +69,8 @@ interface BoardState {
   reorderColumns: (boardId: string, columnIds: string[]) => Promise<void>
   deleteColumn: (columnId: string) => Promise<void>
   archiveColumn: (columnId: string) => Promise<void>
+  restoreColumn: (columnId: string) => Promise<void>
+  fetchArchivedColumns: (boardId: string) => Promise<any[]>
   addCard: (boardId: string, data: Partial<Card> & { columnId: string }) => Promise<void>
   updateCard: (cardId: string, data: Partial<Card>) => Promise<void>
   archiveCard: (cardId: string) => Promise<void>
@@ -183,6 +185,15 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
       if (!state.board) return state
       return { board: { ...state.board, columns: state.board.columns.filter((c) => c.id !== columnId) } }
     })
+  },
+
+  restoreColumn: async (columnId) => {
+    await api.post(`/columns/${columnId}/restore`)
+  },
+
+  fetchArchivedColumns: async (boardId) => {
+    const { data } = await api.get(`/boards/${boardId}/archived-columns`)
+    return data.columns
   },
 
   addCard: async (boardId, cardData) => {
