@@ -188,7 +188,7 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
                           style={{ background: `linear-gradient(90deg, transparent, ${column.color}, transparent)` }}
                         />
                       )}
-                      <KanbanCard card={card} index={index} columnColor={column.color} canDrag={cardCanDrag} onArchive={onArchive} />
+                      <KanbanCard card={card} index={index} columnColor={column.color} canDrag={canDrag} onArchive={onArchive} />
                     </Fragment>
                   )
                 })}

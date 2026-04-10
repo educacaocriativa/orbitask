@@ -142,6 +142,18 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
   },
 
   reorderCard: async (columnId, cardIds) => {
+    // Optimistic update — reorder cards immediately in UI
+    set((state) => {
+      if (!state.board) return state
+      const cols = state.board.columns.map((col) => {
+        if (col.id !== columnId) return col
+        const reordered = cardIds
+          .map((id) => col.cards.find((c) => c.id === id))
+          .filter(Boolean) as typeof col.cards
+        return { ...col, cards: reordered }
+      })
+      return { board: { ...state.board, columns: cols } }
+    })
     await api.patch('/cards/reorder', { columnId, cardIds })
   },
 
