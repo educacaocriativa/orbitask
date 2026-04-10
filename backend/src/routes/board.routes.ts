@@ -204,7 +204,7 @@ export async function boardRoutes(app: FastifyInstance) {
 
     // ── Duplicate name check ─────────────────────────────────
     const duplicateColumn = await prisma.column.findFirst({
-      where: { boardId, title: { equals: body.title, mode: 'insensitive' } },
+      where: { boardId, title: body.title },
     })
     if (duplicateColumn) throw new AppError(`Já existe uma etapa chamada "${body.title}" nesta missão.`, 400)
 
@@ -271,7 +271,7 @@ export async function boardRoutes(app: FastifyInstance) {
     // ── Duplicate name check on rename ──────────────────────
     if (body.title && prevColumn && body.title.toLowerCase() !== prevColumn.title.toLowerCase()) {
       const duplicateColumn = await prisma.column.findFirst({
-        where: { boardId: prevColumn.boardId, title: { equals: body.title, mode: 'insensitive' }, NOT: { id } },
+        where: { boardId: prevColumn.boardId, title: body.title, NOT: { id } },
       })
       if (duplicateColumn) throw new AppError(`Já existe uma etapa chamada "${body.title}" nesta missão.`, 400)
     }

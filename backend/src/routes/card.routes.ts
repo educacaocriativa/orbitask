@@ -25,7 +25,7 @@ export async function cardRoutes(app: FastifyInstance) {
 
     // ── Duplicate name check ─────────────────────────────────
     const duplicateCard = await prisma.card.findFirst({
-      where: { boardId, title: { equals: body.title, mode: 'insensitive' }, isArchived: false },
+      where: { boardId, title: body.title, isArchived: false },
     })
     if (duplicateCard) throw new AppError(`Já existe um card chamado "${body.title}" nesta missão.`, 400)
 
@@ -169,7 +169,7 @@ export async function cardRoutes(app: FastifyInstance) {
     // ── Duplicate name check on rename ───────────────────────
     if (body.title && prevCard && body.title.toLowerCase() !== prevCard.title.toLowerCase()) {
       const duplicateCard = await prisma.card.findFirst({
-        where: { boardId: prevCard.boardId, title: { equals: body.title, mode: 'insensitive' }, isArchived: false, NOT: { id } },
+        where: { boardId: prevCard.boardId, title: body.title, isArchived: false, NOT: { id } },
       })
       if (duplicateCard) throw new AppError(`Já existe um card chamado "${body.title}" nesta missão.`, 400)
     }
