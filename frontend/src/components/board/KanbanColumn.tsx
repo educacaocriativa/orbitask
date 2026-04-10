@@ -26,10 +26,12 @@ interface KanbanColumnProps {
 }
 
 export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCardId }: KanbanColumnProps) {
-  const [showAddCard,    setShowAddCard]    = useState(false)
-  const [showEditColumn, setShowEditColumn] = useState(false)
-  const [confirmDelete,  setConfirmDelete]  = useState(false)
-  const [deleting,       setDeleting]       = useState(false)
+  const [showAddCard,      setShowAddCard]      = useState(false)
+  const [showEditColumn,   setShowEditColumn]   = useState(false)
+  const [confirmDelete,    setConfirmDelete]    = useState(false)
+  const [deleting,         setDeleting]         = useState(false)
+  const [confirmArchive,   setConfirmArchive]   = useState(false)
+  const [archiving,        setArchiving]        = useState(false)
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({ id: column.id })
   const {
@@ -41,7 +43,7 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
   const isAdmin        = currentUser?.role === 'ADMIN'
   const isCoordinator  = useIsCoordinator()
   const isPrivileged   = isAdmin || isCoordinator
-  const { deleteColumn } = useBoardStore()
+  const { deleteColumn, archiveColumn } = useBoardStore()
 
   const canDrag = useMemo(() => {
     if (isPrivileged) return true
@@ -72,6 +74,19 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
       toast.error(err?.response?.data?.error ?? 'Erro ao excluir etapa')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleArchive() {
+    setArchiving(true)
+    try {
+      await archiveColumn(column.id)
+      toast.success('Etapa arquivada')
+      setConfirmArchive(false)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao arquivar etapa')
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -127,6 +142,16 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
                     className="flex items-center justify-center w-6 h-6 rounded-lg text-white/40 border border-white/10 hover:text-white hover:border-neon-violet/50 hover:bg-neon-violet/15 transition-all duration-200 text-xs"
                   >
                     ✏️
+                  </button>
+                )}
+                {/* Archive button — Privileged only, column must be empty */}
+                {isPrivileged && (
+                  <button
+                    onClick={() => setConfirmArchive(true)}
+                    title="Arquivar etapa"
+                    className="flex items-center justify-center w-6 h-6 rounded-lg text-white/40 border border-white/10 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/12 transition-all duration-200 text-xs"
+                  >
+                    🗃
                   </button>
                 )}
                 {/* Delete button — Admin only */}
@@ -255,6 +280,42 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
                 <button onClick={handleDelete} disabled={deleting}
                   className="flex-[2] py-2.5 rounded-xl text-sm font-display font-black text-white bg-red-500/80 hover:bg-red-500 disabled:opacity-50 transition-all">
                   {deleting ? 'Excluindo...' : '🗑 Excluir'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirm archive dialog */}
+      <AnimatePresence>
+        {confirmArchive && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setConfirmArchive(false)}
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="relative w-full max-w-sm glass rounded-2xl p-6 shadow-glass"
+            >
+              <div className="absolute -top-px left-6 right-6 h-px bg-gradient-to-r from-transparent via-amber-500/60 to-transparent" />
+              <h3 className="font-display text-base font-black text-white mb-2">🗃 Arquivar Etapa</h3>
+              <p className="text-sm text-white/60 font-body mb-1">
+                Tem certeza que deseja arquivar <strong className="text-white">"{column.title}"</strong>?
+              </p>
+              <p className="text-xs text-amber-300/70 font-body mb-5">
+                A etapa ficará oculta do board. Ela deve estar sem cards ativos para ser arquivada.
+              </p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmArchive(false)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-body border border-white/15 text-white/60 hover:bg-white/5 transition-all">
+                  Cancelar
+                </button>
+                <button onClick={handleArchive} disabled={archiving}
+                  className="flex-[2] py-2.5 rounded-xl text-sm font-display font-black text-white bg-amber-500/80 hover:bg-amber-500 disabled:opacity-50 transition-all">
+                  {archiving ? 'Arquivando...' : '🗃 Arquivar'}
                 </button>
               </div>
             </motion.div>

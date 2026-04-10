@@ -297,7 +297,7 @@ export default function BoardListPage() {
                       </div>
 
                       <div>
-                        <h3 className="font-display text-base font-semibold text-white/90 group-hover:text-white transition-colors truncate">
+                        <h3 className="font-display text-base font-semibold text-white/90 group-hover:text-white transition-colors line-clamp-2 leading-snug">
                           {board.title}
                         </h3>
                         {board.description && (

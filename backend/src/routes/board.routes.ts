@@ -373,6 +373,47 @@ export async function boardRoutes(app: FastifyInstance) {
     return reply.send({ ok: true })
   })
 
+  // ── DELETE /columns/:id/archive — Admin/Coordinator only ──
+  app.delete('/columns/:id/archive', { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId  = request.user.id
+    const isAdmin = request.user.role === 'ADMIN'
+
+    const column = await prisma.column.findUnique({ where: { id } })
+    if (!column) throw new AppError('Etapa não encontrada', 404)
+    if (column.isArchived) throw new AppError('Etapa já está arquivada', 400)
+
+    const isCoord = await isCoordinator(userId, column.boardId)
+    if (!isAdmin && !isCoord) throw new AppError('Sem permissão para arquivar etapas', 403)
+
+    const activeCards = await prisma.card.count({
+      where: { currentColumnId: id, isArchived: false },
+    })
+    if (activeCards > 0) {
+      throw new AppError(`Esta etapa possui ${activeCards} card(s) ativo(s). Mova ou arquive-os antes de arquivar a etapa.`, 400)
+    }
+
+    await prisma.column.update({ where: { id }, data: { isArchived: true } })
+    return reply.send({ ok: true })
+  })
+
+  // ── POST /columns/:id/restore — Admin/Coordinator only ────
+  app.post('/columns/:id/restore', { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const userId  = request.user.id
+    const isAdmin = request.user.role === 'ADMIN'
+
+    const column = await prisma.column.findUnique({ where: { id } })
+    if (!column) throw new AppError('Etapa não encontrada', 404)
+    if (!column.isArchived) throw new AppError('Etapa não está arquivada', 400)
+
+    const isCoord = await isCoordinator(userId, column.boardId)
+    if (!isAdmin && !isCoord) throw new AppError('Sem permissão para restaurar etapas', 403)
+
+    await prisma.column.update({ where: { id }, data: { isArchived: false } })
+    return reply.send({ ok: true })
+  })
+
   // ── PATCH /boards/:boardId/columns/reorder ───────────────
   app.patch('/boards/:boardId/columns/reorder', { preHandler: [authenticate] }, async (request, reply) => {
     const { columnIds } = request.body as { columnIds: string[] }

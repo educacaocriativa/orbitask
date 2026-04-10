@@ -68,6 +68,7 @@ interface BoardState {
   reorderCard: (columnId: string, cardIds: string[]) => Promise<void>
   reorderColumns: (boardId: string, columnIds: string[]) => Promise<void>
   deleteColumn: (columnId: string) => Promise<void>
+  archiveColumn: (columnId: string) => Promise<void>
   addCard: (boardId: string, data: Partial<Card> & { columnId: string }) => Promise<void>
   updateCard: (cardId: string, data: Partial<Card>) => Promise<void>
   archiveCard: (cardId: string) => Promise<void>
@@ -170,6 +171,14 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
 
   deleteColumn: async (columnId) => {
     await api.delete(`/columns/${columnId}`)
+    set((state) => {
+      if (!state.board) return state
+      return { board: { ...state.board, columns: state.board.columns.filter((c) => c.id !== columnId) } }
+    })
+  },
+
+  archiveColumn: async (columnId) => {
+    await api.delete(`/columns/${columnId}/archive`)
     set((state) => {
       if (!state.board) return state
       return { board: { ...state.board, columns: state.board.columns.filter((c) => c.id !== columnId) } }
