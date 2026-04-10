@@ -17,7 +17,7 @@ export async function sectionRoutes(app: FastifyInstance) {
     const section = await prisma.cardSection.findUnique({
       where: { id },
       include: {
-        card: { include: { board: { select: { id: true, title: true } } } },
+        card: { include: { board: { select: { id: true, title: true, isArchived: true } } } },
         owner: { select: { id: true, name: true } },
         column: {
           include: {
@@ -163,7 +163,7 @@ export async function sectionRoutes(app: FastifyInstance) {
         mentionedBy:   { select: { id: true, name: true } },
         cardSection:   {
           include: {
-            card: { include: { board: { select: { id: true, title: true } } } },
+            card: { include: { board: { select: { id: true, title: true, isArchived: true } } } },
           },
         },
       },
@@ -300,7 +300,7 @@ async function processMentions(params: {
   mentionedUserIds: string[]
   mentionedById: string
   mentionedByName: string
-  card: { id: string; title: string; board: { id: string; title: string } }
+  card: { id: string; title: string; board: { id: string; title: string; isArchived: boolean } }
 }) {
   const users = await prisma.user.findMany({
     where: { id: { in: params.mentionedUserIds }, isActive: true },
@@ -317,8 +317,8 @@ async function processMentions(params: {
       },
     })
 
-    // Queue WhatsApp notification if the user has a phone
-    if (user.phoneWhatsapp) {
+    // Queue WhatsApp notification if the user has a phone and board is active
+    if (user.phoneWhatsapp && !params.card.board.isArchived) {
       const notification = await prisma.notificationQueue.create({
         data: {
           type: NotificationType.MENTION,

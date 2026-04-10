@@ -220,7 +220,7 @@ export async function cardRoutes(app: FastifyInstance) {
           include: { owner: { select: { id: true, name: true, phoneWhatsapp: true } } },
         },
         creator: { select: { id: true, name: true } },
-        board: { select: { id: true, title: true } },
+        board: { select: { id: true, title: true, isArchived: true } },
       },
     })
 
@@ -364,8 +364,8 @@ export async function cardRoutes(app: FastifyInstance) {
       },
     })
 
-    // Enqueue WhatsApp notification for the column owner
-    if (targetColumn.owner.phoneWhatsapp) {
+    // Enqueue WhatsApp notification for the column owner (skip if board is archived)
+    if (targetColumn.owner.phoneWhatsapp && !card.board.isArchived) {
       const notification = await prisma.notificationQueue.create({
         data: {
           type: NotificationType.CARD_MOVED,

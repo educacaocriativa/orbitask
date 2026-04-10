@@ -301,6 +301,12 @@ export async function boardRoutes(app: FastifyInstance) {
       const newMembers = column.columnMembers.filter((m) => !prevMemberIds.has(m.user.id))
 
       setImmediate(async () => {
+        // Check if board is archived — skip WhatsApp notifications if so
+        const boardStatus = await prisma.board.findUnique({
+          where: { id: prevColumn.boardId }, select: { isArchived: true },
+        })
+        const boardIsArchived = boardStatus?.isArchived ?? false
+
         const newEmails: string[] = []
         for (const m of newMembers) {
           // Add to Shared Drive
@@ -309,8 +315,8 @@ export async function boardRoutes(app: FastifyInstance) {
           })
           if (userWithEmail?.email) newEmails.push(userWithEmail.email)
 
-          // WhatsApp notification
-          if (!m.user.phoneWhatsapp) continue
+          // WhatsApp notification (skip if board archived)
+          if (!m.user.phoneWhatsapp || boardIsArchived) continue
           try {
             await whatsapp.notifyAnnouncement({
               recipientPhone: m.user.phoneWhatsapp,

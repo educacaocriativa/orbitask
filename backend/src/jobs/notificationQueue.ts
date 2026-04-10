@@ -64,6 +64,7 @@ export function startDeadlineCron() {
         deadline: { lt: new Date() },
         isArchived: false,
         isOverdue: false,
+        board: { isArchived: false },
       },
       include: {
         creator: { select: { id: true, name: true, phoneWhatsapp: true } },
@@ -125,6 +126,7 @@ export function startDeadlineCron() {
         deadline: { lt: new Date() },
         isArchived: false,
         isOverdue: true,
+        board: { isArchived: false },
       },
       include: {
         creator: { select: { id: true, phoneWhatsapp: true } },
