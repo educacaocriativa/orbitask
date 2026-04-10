@@ -30,6 +30,7 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
   const isCoordinator = useIsCoordinator()
   const isAdmin       = currentUser?.role === 'ADMIN'
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null)
+  const [dragOverCardId, setDragOverCardId]     = useState<string | null>(null)
   const [activeColumn, setActiveColumn]         = useState<Column | null>(null)
   const [pendingMove, setPendingMove] = useState<{
     cardId: string; fromColumnId: string; toColumnId: string; position: number
@@ -51,16 +52,30 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const overId = event.over?.id as string | null
+
+    setDragOverColumnId(null)
+    setDragOverCardId(null)
+
     if (!overId || !board) return
 
-    // Check if dragging over a column
-    const isColumn = board.columns.some((c) => c.id === overId)
-    setDragOverColumnId(isColumn ? overId : null)
+    // Over a column's empty area
+    if (board.columns.some((c) => c.id === overId)) {
+      setDragOverColumnId(overId)
+      return
+    }
+
+    // Over a specific card — find which column it belongs to
+    const colWithCard = board.columns.find((c) => c.cards.some((card) => card.id === overId))
+    if (colWithCard) {
+      setDragOverColumnId(colWithCard.id)
+      setDragOverCardId(overId)
+    }
   }, [board])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     setDragOverColumnId(null)
+    setDragOverCardId(null)
 
     // ── Column reorder ────────────────────────────────────────
     if (active.data.current?.type === 'column') {
@@ -122,8 +137,9 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
       return
     }
 
-    // Optimistic UI
-    const targetPosition = toColumn.cards.findIndex((c) => c.id === overId)
+    // Optimistic UI — prefer the card hovered during drag for precise positioning
+    const dropTargetId = dragOverCardId ?? overId
+    const targetPosition = toColumn.cards.findIndex((c) => c.id === dropTargetId)
     const position = targetPosition === -1 ? toColumn.cards.length : targetPosition
 
     optimisticMove(activeCardId, fromColumn.id, toColumn.id, position, currentUser?.id ?? '')
@@ -135,7 +151,7 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
       toColumnId: toColumn.id,
       position,
     })
-  }, [board, activeCard, currentUser, isCoordinator, setActiveCard, optimisticMove, reorderCard])
+  }, [board, activeCard, currentUser, isCoordinator, setActiveCard, optimisticMove, reorderCard, dragOverCardId])
 
   async function confirmMove(deadline: string) {
     if (!pendingMove) return
@@ -172,14 +188,26 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
       >
         <div className="board-canvas scrollbar-space pt-4">
           <SortableContext items={displayBoard.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
-            {displayBoard.columns.map((column) => (
-              <KanbanColumn
-                key={column.id}
-                column={column}
-                boardId={boardId}
-                onArchive={onArchive}
-              />
-            ))}
+            {displayBoard.columns.map((column) => {
+              // Show drop indicator only for cross-column drags
+              const fromColumn = activeCard
+                ? board?.columns.find((c) => c.cards.some((card) => card.id === activeCard.id))
+                : null
+              const isCrossColumnTarget = fromColumn && fromColumn.id !== column.id && dragOverColumnId === column.id
+              const dropPreviewBeforeCardId = isCrossColumnTarget
+                ? (dragOverCardId ?? 'end')
+                : null
+
+              return (
+                <KanbanColumn
+                  key={column.id}
+                  column={column}
+                  boardId={boardId}
+                  onArchive={onArchive}
+                  dropPreviewBeforeCardId={dropPreviewBeforeCardId}
+                />
+              )
+            })}
           </SortableContext>
 
           {/* Add column placeholder */}

@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -21,9 +21,11 @@ interface KanbanColumnProps {
   column: Column
   boardId: string
   onArchive?: (cardId: string) => void
+  /** ID do card antes do qual mostrar o indicador de drop, ou 'end' para o final */
+  dropPreviewBeforeCardId?: string | null
 }
 
-export function KanbanColumn({ column, boardId, onArchive }: KanbanColumnProps) {
+export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCardId }: KanbanColumnProps) {
   const [showAddCard,    setShowAddCard]    = useState(false)
   const [showEditColumn, setShowEditColumn] = useState(false)
   const [confirmDelete,  setConfirmDelete]  = useState(false)
@@ -177,12 +179,22 @@ export function KanbanColumn({ column, boardId, onArchive }: KanbanColumnProps) 
                 {column.cards.map((card, index) => {
                   const cardCanDrag = canDrag && (isPrivileged || card.lastMovedByUserId !== currentUser?.id)
                   return (
-                    <KanbanCard key={card.id} card={card} index={index} columnColor={column.color} canDrag={cardCanDrag} onArchive={onArchive} />
+                    <Fragment key={card.id}>
+                      {dropPreviewBeforeCardId === card.id && (
+                        <motion.div
+                          initial={{ opacity: 0, scaleX: 0.5 }}
+                          animate={{ opacity: 1, scaleX: 1 }}
+                          className="h-1 rounded-full mx-1 pointer-events-none"
+                          style={{ background: `linear-gradient(90deg, transparent, ${column.color}, transparent)` }}
+                        />
+                      )}
+                      <KanbanCard card={card} index={index} columnColor={column.color} canDrag={cardCanDrag} onArchive={onArchive} />
+                    </Fragment>
                   )
                 })}
               </AnimatePresence>
 
-              {column.cards.length === 0 && !isOver && (
+              {column.cards.length === 0 && !isOver && !dropPreviewBeforeCardId && (
                 <div className="flex-1 flex items-center justify-center py-4">
                   <p className="text-[11px] text-white/25 font-body text-center leading-relaxed font-semibold">
                     🌌 Zona vazia<br />Arraste cards aqui
@@ -190,7 +202,7 @@ export function KanbanColumn({ column, boardId, onArchive }: KanbanColumnProps) 
                 </div>
               )}
 
-              {isOver && (
+              {(isOver || dropPreviewBeforeCardId === 'end') && (
                 <motion.div
                   layoutId="drop-indicator"
                   className="h-1 rounded-full mx-1"
