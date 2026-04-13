@@ -186,7 +186,7 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="board-canvas scrollbar-space pt-4">
+        <div className="board-canvas scrollbar-space pt-4 h-full">
           <SortableContext items={displayBoard.columns.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
             {displayBoard.columns.map((column) => {
               // Show drop indicator only for cross-column drags

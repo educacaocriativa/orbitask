@@ -128,7 +128,7 @@ export default function BoardPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="h-screen flex flex-col overflow-hidden">
       <Navbar />
 
       {/* ── Sub-header ──────────────────────────────── */}
@@ -250,7 +250,7 @@ export default function BoardPage() {
       {isPrivileged && <OverdueBanner key={boardId} boardId={boardId} />}
 
       {/* ── Kanban Board ─────────────────────────────── */}
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex-1 min-h-0">
         <KanbanBoard
           boardId={boardId}
           filteredBoard={filteredBoard}
