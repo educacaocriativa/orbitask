@@ -250,7 +250,7 @@ export default function BoardPage() {
       {isPrivileged && <OverdueBanner key={boardId} boardId={boardId} />}
 
       {/* ── Kanban Board ─────────────────────────────── */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col">
         <KanbanBoard
           boardId={boardId}
           filteredBoard={filteredBoard}
