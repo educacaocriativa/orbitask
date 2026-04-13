@@ -54,10 +54,11 @@ export async function enqueueNotification(
   )
 }
 
-// ── Cron: Check overdue cards every 2 hours ──────────────
+// ── Cron: Newly overdue cards — 10h (Brasília) ───────────
 export function startDeadlineCron() {
-  cron.schedule('0 */2 * * *', async () => {
-    console.log('⏰ Running overdue deadline check...')
+  // 10:00 Brasília — notifica cards que venceram e ainda não foram marcados como overdue
+  cron.schedule('0 10 * * *', async () => {
+    console.log('⏰ [10h Brasília] Verificando cards recém-vencidos...')
 
     const overdueCards = await prisma.card.findMany({
       where: {
@@ -77,18 +78,17 @@ export function startDeadlineCron() {
       },
     })
 
-    console.log(`📋 Found ${overdueCards.length} newly overdue cards`)
+    console.log(`📋 ${overdueCards.length} card(s) recém-vencido(s) encontrado(s)`)
 
     for (const card of overdueCards) {
-      // Mark card as overdue
       await prisma.card.update({
         where: { id: card.id },
         data: { isOverdue: true },
       })
 
-      // Notify column owner
+      // Notifica dono da etapa
       if (card.currentColumn.owner.phoneWhatsapp) {
-        const ownerNotification = await prisma.notificationQueue.create({
+        const n = await prisma.notificationQueue.create({
           data: {
             type: 'DEADLINE_EXPIRED',
             recipientId: card.currentColumn.owner.id,
@@ -98,15 +98,12 @@ export function startDeadlineCron() {
             payload: JSON.parse(JSON.stringify({ retryCount: 0, isColumnOwner: true })),
           },
         })
-        await enqueueNotification('DEADLINE_EXPIRED', ownerNotification.id)
+        await enqueueNotification('DEADLINE_EXPIRED', n.id)
       }
 
-      // Notify card creator (project chief) if different from column owner
-      if (
-        card.creator.phoneWhatsapp &&
-        card.creator.id !== card.currentColumn.owner.id
-      ) {
-        const creatorNotification = await prisma.notificationQueue.create({
+      // Notifica criador do card se for pessoa diferente do dono da etapa
+      if (card.creator.phoneWhatsapp && card.creator.id !== card.currentColumn.owner.id) {
+        const n = await prisma.notificationQueue.create({
           data: {
             type: 'DEADLINE_EXPIRED',
             recipientId: card.creator.id,
@@ -116,11 +113,17 @@ export function startDeadlineCron() {
             payload: JSON.parse(JSON.stringify({ retryCount: 0, isCreator: true })),
           },
         })
-        await enqueueNotification('DEADLINE_EXPIRED', creatorNotification.id)
+        await enqueueNotification('DEADLINE_EXPIRED', n.id)
       }
     }
 
-    // Send REPEATED alerts for already-overdue cards (every 2 hours)
+    console.log('✅ Cron 10h concluído')
+  }, { timezone: 'America/Sao_Paulo' })
+
+  // 11:00 Brasília — alerta repetido para cards que já estavam vencidos
+  cron.schedule('0 11 * * *', async () => {
+    console.log('⏰ [11h Brasília] Enviando alertas repetidos de prazo vencido...')
+
     const alreadyOverdueCards = await prisma.card.findMany({
       where: {
         deadline: { lt: new Date() },
@@ -138,6 +141,8 @@ export function startDeadlineCron() {
       },
     })
 
+    console.log(`📋 ${alreadyOverdueCards.length} card(s) com alerta repetido`)
+
     for (const card of alreadyOverdueCards) {
       const recipients = [
         card.currentColumn.owner,
@@ -145,7 +150,7 @@ export function startDeadlineCron() {
       ].filter((r) => r.phoneWhatsapp)
 
       for (const recipient of recipients) {
-        const notification = await prisma.notificationQueue.create({
+        const n = await prisma.notificationQueue.create({
           data: {
             type: 'DEADLINE_EXPIRED',
             recipientId: recipient.id,
@@ -155,13 +160,13 @@ export function startDeadlineCron() {
             payload: JSON.parse(JSON.stringify({ retryCount: 1, isRepeatedAlert: true })),
           },
         })
-        await enqueueNotification('DEADLINE_EXPIRED', notification.id)
+        await enqueueNotification('DEADLINE_EXPIRED', n.id)
       }
     }
 
-    console.log('✅ Deadline cron completed')
-  })
+    console.log('✅ Cron 11h concluído')
+  }, { timezone: 'America/Sao_Paulo' })
 
-  console.log('⏰ Deadline cron scheduled (every 2 hours)')
+  console.log('⏰ Crons de prazo agendados: 10h (novos) e 11h (repetidos) — Horário de Brasília')
 }
 
