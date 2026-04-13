@@ -92,7 +92,7 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
 
   return (
     <>
-      <div ref={setDragRef} {...attributes} className="flex flex-col shrink-0" style={{ ...style, width: 'var(--col-width)' }}>
+      <div ref={setDragRef} {...attributes} className="flex flex-col shrink-0 h-full" style={{ ...style, width: 'var(--col-width)' }}>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -195,7 +195,7 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
             <div
               ref={setDropRef}
               className={cn(
-                'flex flex-col gap-2.5 flex-1 p-2 rounded-b-2xl glass transition-all duration-200',
+                'flex flex-col gap-2.5 flex-1 p-2 rounded-b-2xl glass transition-all duration-200 overflow-y-auto scrollbar-space',
                 isOver && 'drop-zone-active',
               )}
               style={{ minHeight: 80 }}

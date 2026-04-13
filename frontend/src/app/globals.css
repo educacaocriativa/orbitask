@@ -58,7 +58,7 @@ p,span,label,li,td{font-weight:600}
 }
 
 /* BOARD CANVAS */
-.board-canvas{display:flex;gap:var(--col-gap);padding:0 24px 24px;height:100%;overflow-x:auto;overflow-y:hidden;align-items:flex-start}
+.board-canvas{display:flex;gap:var(--col-gap);padding:0 24px 24px;height:100%;overflow-x:auto;overflow-y:hidden;align-items:stretch}
 .board-canvas::-webkit-scrollbar{height:6px}
 .board-canvas::-webkit-scrollbar-track{background:transparent}
 .board-canvas::-webkit-scrollbar-thumb{background:rgba(124,58,237,0.5);border-radius:3px}
