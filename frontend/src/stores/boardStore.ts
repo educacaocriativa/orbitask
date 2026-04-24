@@ -91,7 +91,8 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
   openCardId: null,
 
   fetchBoard: async (id) => {
-    set({ isLoading: true })
+    const alreadyLoaded = !!get().board
+    if (!alreadyLoaded) set({ isLoading: true })
     try {
       const { data } = await api.get(`/boards/${id}`)
       // Normalize: compute pendingMentionCount per card and drop raw sections
