@@ -244,6 +244,8 @@ export async function sectionRoutes(app: FastifyInstance) {
         owner:  { select: { id: true, name: true } },
       },
     })
+    // Preservar createdAt original para manter a posição na lista (ordenada por createdAt asc)
+    const originalCreatedAt = section?.createdAt
     if (!section) throw new AppError('Seção não encontrada', 404)
 
     // 1. Apagar pasta no Drive
@@ -281,6 +283,8 @@ export async function sectionRoutes(app: FastifyInstance) {
         ownerId:       section.owner.id,
         driveFolderId: newFolderId,
         driveFolderUrl: newFolderUrl,
+        // Preserva o timestamp original para manter a posição na lista (orderBy createdAt asc)
+        createdAt:     originalCreatedAt,
       },
       include: {
         owner:  { select: { id: true, name: true, avatarUrl: true } },
