@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { UserRole } from '@prisma/client'
+import bcrypt from 'bcryptjs'
 import { AdminService } from '../services/AdminService'
 import { requireAdmin } from '../middlewares/auth'
 import { WhatsAppService } from '../services/WhatsAppService'
@@ -100,6 +101,23 @@ export async function adminRoutes(app: FastifyInstance) {
       console.error('❌ Error updating user profile:', err?.message, err?.code)
       throw new AppError(err?.message ?? 'Erro ao atualizar usuário', 500)
     }
+  })
+
+  // ── PATCH /admin/users/:id/password ─────────────────────
+  app.patch('/admin/users/:id/password', {
+    preHandler: [isAdmin],
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { password } = request.body as { password: string }
+
+    if (!password || password.length < 8) {
+      throw new AppError('A senha deve ter pelo menos 8 caracteres', 400)
+    }
+
+    const passwordHash = await bcrypt.hash(password, env.BCRYPT_ROUNDS)
+    await prisma.user.update({ where: { id }, data: { passwordHash } })
+
+    return reply.send({ message: 'Senha redefinida com sucesso' })
   })
 
   // ── GET /admin/logs ──────────────────────────────────────

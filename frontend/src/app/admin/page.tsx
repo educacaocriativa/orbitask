@@ -340,6 +340,96 @@ function UserFormModal({ open, onClose, onSave, editUser }: {
   )
 }
 
+// ── Reset password modal ─────────────────────────────────
+function ResetPasswordModal({ user, onClose }: { user: User | null; onClose: () => void }) {
+  const [password, setPassword]   = useState('')
+  const [confirm, setConfirm]     = useState('')
+  const [saving, setSaving]       = useState(false)
+
+  useEffect(() => { setPassword(''); setConfirm('') }, [user])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (password !== confirm) { toast.error('As senhas não coincidem'); return }
+    if (password.length < 8)  { toast.error('Mínimo 8 caracteres'); return }
+    setSaving(true)
+    try {
+      await api.patch(`/admin/users/${user!.id}/password`, { password })
+      toast.success('Senha redefinida com sucesso 🔑')
+      onClose()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao redefinir senha')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <AnimatePresence>
+      {user && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92 }} transition={{ type: 'spring', damping: 22, stiffness: 320 }}
+            className="relative w-full max-w-sm glass rounded-2xl p-6 shadow-glass"
+          >
+            <div className="absolute -top-px left-6 right-6 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
+
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="font-display text-base font-black tracking-wider text-white">🔑 RESETAR SENHA</h3>
+                <p className="text-sm text-white/60 font-body mt-0.5">{user.name}</p>
+              </div>
+              <button onClick={onClose} className="text-white/40 hover:text-white text-xl transition-colors">✕</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-display font-black text-white/75 uppercase tracking-widest mb-1.5">
+                  Nova Senha *
+                </label>
+                <input
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  type="password" required minLength={8} placeholder="Mínimo 8 caracteres"
+                  className="w-full px-4 py-2.5 rounded-xl text-sm font-body input-space"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-display font-black text-white/75 uppercase tracking-widest mb-1.5">
+                  Confirmar Senha *
+                </label>
+                <input
+                  value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                  type="password" required minLength={8} placeholder="Repita a nova senha"
+                  className={cn('w-full px-4 py-2.5 rounded-xl text-sm font-body input-space',
+                    confirm && password !== confirm ? 'border border-red-500/60' : '')}
+                />
+                {confirm && password !== confirm && (
+                  <p className="text-[11px] text-red-400 mt-1 font-body">As senhas não coincidem</p>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={onClose}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-body font-semibold border border-white/18 text-white/75 hover:bg-white/7 transition-all">
+                  Cancelar
+                </button>
+                <motion.button type="submit"
+                  disabled={saving || password.length < 8 || password !== confirm}
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  className="flex-[2] py-2.5 rounded-xl text-sm font-display font-black tracking-wider text-white uppercase disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg, #d97706, #f59e0b)', boxShadow: '0 0 20px rgba(217,119,6,0.4)' }}>
+                  {saving ? '⏳ Salvando...' : '🔑 Redefinir Senha'}
+                </motion.button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  )
+}
+
 // ── Main page ────────────────────────────────────────────
 export default function AdminPage() {
   const [activeTab, setActiveTab]   = useState<Tab>('stats')
@@ -348,9 +438,10 @@ export default function AdminPage() {
   const [logs, setLogs]             = useState<Log[]>([])
   const [whatsappStatus, setWhatsappStatus] = useState<{ connected: boolean } | null>(null)
   const [isLoading, setIsLoading]   = useState(true)
-  const [showUserForm, setShowUserForm]   = useState(false)
+  const [showUserForm, setShowUserForm]       = useState(false)
   const [showImportUsers, setShowImportUsers] = useState(false)
-  const [editingUser, setEditingUser]   = useState<User | null>(null)
+  const [editingUser, setEditingUser]         = useState<User | null>(null)
+  const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
   const [logSearch, setLogSearch]   = useState('')
   const [selectedLog, setSelectedLog] = useState<Log | null>(null)
 
@@ -559,6 +650,11 @@ export default function AdminPage() {
                                   className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-neon-violet/40 text-violet-300 font-body font-bold hover:bg-neon-violet/18 transition-all">
                                   ✏️ Editar
                                 </button>
+                                <button onClick={() => setResetPasswordUser(user)}
+                                  title="Redefinir senha"
+                                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-amber-500/35 text-amber-300 font-body font-bold hover:bg-amber-500/12 transition-all">
+                                  🔑 Senha
+                                </button>
                                 <button onClick={() => toggleUser(user)}
                                   className={cn('text-xs px-2.5 py-1.5 rounded-lg border font-body font-bold transition-all',
                                     user.isActive
@@ -648,6 +744,7 @@ export default function AdminPage() {
       </main>
 
       <UserFormModal open={showUserForm} onClose={() => setShowUserForm(false)} onSave={handleUserSaved} editUser={editingUser} />
+      <ResetPasswordModal user={resetPasswordUser} onClose={() => setResetPasswordUser(null)} />
       <LogDetailModal log={selectedLog} onClose={() => setSelectedLog(null)} />
       <ImportCSVModal
         open={showImportUsers}
