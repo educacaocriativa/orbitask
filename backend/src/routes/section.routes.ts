@@ -228,7 +228,7 @@ export async function sectionRoutes(app: FastifyInstance) {
   })
 
   // ── DELETE /sections/:id — Admin only ────────────────────
-  // Apaga a seção + pasta no Drive e recria em branco (mesmo card/coluna/dono)
+  // Apaga definitivamente a seção + pasta no Drive (sem recriar)
   app.delete('/sections/:id', {
     preHandler: [authenticate],
   }, async (request, reply) => {
@@ -239,13 +239,10 @@ export async function sectionRoutes(app: FastifyInstance) {
     const section = await prisma.cardSection.findUnique({
       where: { id },
       include: {
-        card:   { select: { id: true, title: true, currentColumnId: true } },
-        column: { select: { id: true, driveFolderId: true } },
-        owner:  { select: { id: true, name: true } },
+        card:   { select: { id: true, currentColumnId: true } },
+        column: { select: { id: true } },
       },
     })
-    // Preservar createdAt original para manter a posição na lista (ordenada por createdAt asc)
-    const originalCreatedAt = section?.createdAt
     if (!section) throw new AppError('Seção não encontrada', 404)
 
     // 1. Apagar pasta no Drive
@@ -253,56 +250,18 @@ export async function sectionRoutes(app: FastifyInstance) {
       await googleDrive.deleteFolder(section.driveFolderId)
     }
 
-    // 2. Apagar seção (cascade: files + mentions)
+    // 2. Apagar seção do banco (cascade: files + mentions)
     await prisma.cardSection.delete({ where: { id } })
 
-    // 3. Criar nova seção em branco com nova pasta no Drive
-    let newFolderId: string | null = null
-    let newFolderUrl: string | null = null
-
-    if (section.column.driveFolderId) {
-      try {
-        const folder = await googleDrive.createCardFolder(
-          section.card.title,
-          section.owner.name,
-          section.column.driveFolderId,
-        )
-        if (folder) {
-          newFolderId  = folder.id
-          newFolderUrl = folder.url
-        }
-      } catch (err) {
-        console.error('Drive folder (reset section) error:', err)
-      }
-    }
-
-    const newSection = await prisma.cardSection.create({
-      data: {
-        cardId:        section.card.id,
-        columnId:      section.column.id,
-        ownerId:       section.owner.id,
-        driveFolderId: newFolderId,
-        driveFolderUrl: newFolderUrl,
-        // Preserva o timestamp original para manter a posição na lista (orderBy createdAt asc)
-        createdAt:     originalCreatedAt,
-      },
-      include: {
-        owner:  { select: { id: true, name: true, avatarUrl: true } },
-        column: { select: { id: true, title: true, color: true } },
-        files:    true,
-        mentions: true,
-      },
-    })
-
-    // 4. Se a seção apagada era da coluna atual do card, atualizar o driveFolderId do card
-    if (section.card.currentColumnId === section.column.id && newFolderId) {
+    // 3. Se era a seção da coluna atual do card, limpar o driveFolderId do card
+    if (section.card.currentColumnId === section.column.id) {
       await prisma.card.update({
         where: { id: section.card.id },
-        data:  { driveFolderId: newFolderId, driveFolderUrl: newFolderUrl },
+        data:  { driveFolderId: null, driveFolderUrl: null },
       })
     }
 
-    return reply.send({ section: newSection })
+    return reply.send({ ok: true })
   })
 
   // ── DELETE /sections/:sectionId/files/:fileId ────────────

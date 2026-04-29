@@ -103,7 +103,7 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
       await api.delete(`/sections/${sectionId}`)
       const { data } = await api.get(`/cards/${cardId}`)
       setCard(data.card)
-      toast.success('Seção redefinida ✓')
+      toast.success('Seção excluída ✓')
     } catch (err: any) {
       toast.error(err?.response?.data?.error ?? 'Erro ao excluir seção')
     } finally {
@@ -410,7 +410,7 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                       )}
                       {isAdmin && confirmDeleteSectionId === section.id && (
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-red-500/40 bg-red-950/40 ml-1">
-                          <span className="text-[10px] text-red-300 font-display font-black">Redefinir?</span>
+                          <span className="text-[10px] text-red-300 font-display font-black">Excluir?</span>
                           <button
                             onClick={() => deleteSection(section.id)}
                             disabled={deletingSection}
