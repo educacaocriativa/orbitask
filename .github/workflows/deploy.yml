@@ -92,8 +92,29 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION_RUNNER }}
 
+      - name: Check App Runner service status
+        run: |
+          echo "🔍 Status atual do serviço:"
+          aws apprunner describe-service \
+            --service-arn "${{ env.APP_RUNNER_ARN }}" \
+            --region ${{ env.AWS_REGION_RUNNER }} \
+            --query 'Service.{Status:Status,URL:ServiceUrl}' \
+            --output table 2>&1 || echo "⚠️ Não foi possível consultar o serviço"
+
       - name: Trigger App Runner deployment
         run: |
-          aws apprunner start-deployment \
-            --service-arn "${{ env.APP_RUNNER_ARN }}"
-          echo "✅ App Runner deployment triggered at $(date)"
+          echo "🚀 Disparando deploy..."
+          OUTPUT=$(aws apprunner start-deployment \
+            --service-arn "${{ env.APP_RUNNER_ARN }}" \
+            --region ${{ env.AWS_REGION_RUNNER }} \
+            2>&1)
+          EXIT=$?
+          echo "$OUTPUT"
+          if [ $EXIT -ne 0 ]; then
+            # "already" = serviço já está atualizando, não é erro crítico
+            echo "$OUTPUT" | grep -qi "operation_in_progress\|already" \
+              && echo "ℹ️ Deploy já em andamento — sem ação necessária" && exit 0
+            echo "❌ Falha ao disparar deploy. Verifique o console AWS App Runner (us-east-2)."
+            exit 1
+          fi
+          echo "✅ Deploy iniciado em $(date)"
