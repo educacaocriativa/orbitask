@@ -245,6 +245,11 @@ export async function sectionRoutes(app: FastifyInstance) {
     })
     if (!section) throw new AppError('Seção não encontrada', 404)
 
+    // Bloquear exclusão da seção da etapa onde o card está atualmente
+    if (section.card.currentColumnId === section.column.id) {
+      throw new AppError('Não é possível excluir a seção da etapa atual. Mova o card para outra etapa primeiro.', 400)
+    }
+
     // 1. Apagar pasta no Drive
     if (section.driveFolderId) {
       await googleDrive.deleteFolder(section.driveFolderId)

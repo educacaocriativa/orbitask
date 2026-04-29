@@ -398,17 +398,17 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                         </span>
                       )}
 
-                      {/* Admin: redefinir seção */}
-                      {isAdmin && confirmDeleteSectionId !== section.id && (
+                      {/* Admin: excluir seção — bloqueado se for a etapa atual do card */}
+                      {isAdmin && section.column.id !== card.currentColumn?.id && confirmDeleteSectionId !== section.id && (
                         <button
                           onClick={() => setConfirmDeleteSectionId(section.id)}
-                          title="Redefinir seção (Admin)"
+                          title="Excluir seção (Admin)"
                           className="text-white/20 hover:text-red-400 transition-colors text-sm ml-1"
                         >
                           🗑
                         </button>
                       )}
-                      {isAdmin && confirmDeleteSectionId === section.id && (
+                      {isAdmin && section.column.id !== card.currentColumn?.id && confirmDeleteSectionId === section.id && (
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-red-500/40 bg-red-950/40 ml-1">
                           <span className="text-[10px] text-red-300 font-display font-black">Excluir?</span>
                           <button
