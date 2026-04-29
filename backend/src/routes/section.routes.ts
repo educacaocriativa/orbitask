@@ -279,7 +279,6 @@ export async function sectionRoutes(app: FastifyInstance) {
         cardId:        section.card.id,
         columnId:      section.column.id,
         ownerId:       section.owner.id,
-        content:       null,
         driveFolderId: newFolderId,
         driveFolderUrl: newFolderUrl,
       },
