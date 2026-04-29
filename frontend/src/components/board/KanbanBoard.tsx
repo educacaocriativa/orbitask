@@ -1,7 +1,7 @@
 'use client'
 import { useState, useCallback } from 'react'
 import {
-  DndContext, DragOverlay, PointerSensor,
+  DndContext, DragOverlay, MouseSensor, TouchSensor,
   useSensor, useSensors, closestCorners,
   type DragStartEvent, type DragEndEvent, type DragOverEvent,
 } from '@dnd-kit/core'
@@ -37,7 +37,8 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
   } | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } })
   )
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
