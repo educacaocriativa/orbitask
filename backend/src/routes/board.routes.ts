@@ -111,6 +111,14 @@ export async function boardRoutes(app: FastifyInstance) {
     const { memberIds, coordinatorIds, ...rest } = body
     const coordSet = new Set(coordinatorIds ?? [])
 
+    // Fetch current members before overwriting so we can detect removals
+    const prevBoardMembers = memberIds !== undefined
+      ? await prisma.boardMember.findMany({
+          where: { boardId: id },
+          select: { userId: true, user: { select: { email: true } } },
+        })
+      : []
+
     const updated = await prisma.board.update({
       where: { id },
       data: {
@@ -132,13 +140,26 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Add new members to Shared Drive + board folder ───────
+    // ── Sync Drive access: add new members, revoke removed ───
     if (memberIds !== undefined) {
+      const newMemberIdSet = new Set(memberIds)
+      const removedBoardMembers = prevBoardMembers.filter((m) => !newMemberIdSet.has(m.userId))
       const emails = updated.members.map((m) => m.user.email).filter(Boolean) as string[]
+
       setImmediate(async () => {
+        // Add current members to Shared Drive + board folder
         await googleDrive.addMembersToSharedDrive(emails)
         if (board.driveFolderId) {
           await googleDrive.shareFolderWithMany(board.driveFolderId, emails)
+        }
+
+        // Revoke access for removed members
+        for (const m of removedBoardMembers) {
+          if (!m.user.email) continue
+          await googleDrive.removeMembersFromSharedDrive([m.user.email])
+          if (board.driveFolderId) {
+            await googleDrive.revokePermission(board.driveFolderId, m.user.email)
+          }
         }
       })
     }
@@ -238,10 +259,12 @@ export async function boardRoutes(app: FastifyInstance) {
     })
 
     // ── Create Drive subfolder inside board folder (sync) ───
+    let columnFolderId: string | null = null
     if (board.driveFolderId) {
       try {
         const folder = await googleDrive.createColumnFolder(body.title, board.driveFolderId)
         if (folder) {
+          columnFolderId = folder.id
           await prisma.column.update({
             where: { id: column.id },
             data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
@@ -251,6 +274,21 @@ export async function boardRoutes(app: FastifyInstance) {
         console.error('Drive column folder error:', err)
       }
     }
+
+    // ── Add initial column members to Drive ─────────────────
+    setImmediate(async () => {
+      const memberEmails: string[] = []
+      for (const uid of allOwnerIds) {
+        const user = await prisma.user.findUnique({ where: { id: uid }, select: { email: true } })
+        if (user?.email) memberEmails.push(user.email)
+      }
+      if (memberEmails.length > 0) {
+        await googleDrive.addMembersToSharedDrive(memberEmails)
+        if (columnFolderId) {
+          await googleDrive.shareFolderWithMany(columnFolderId, memberEmails)
+        }
+      }
+    })
 
     return reply.status(201).send({ column })
   })
@@ -283,6 +321,15 @@ export async function boardRoutes(app: FastifyInstance) {
 
     const { ownerIds, ...rest } = body
 
+    // Compute which members are being removed (before the update overwrites the list)
+    const removedUserIds: string[] = []
+    if (ownerIds && ownerIds.length > 0 && prevColumn) {
+      const newMemberIdSet = new Set([...(body.ownerId ? [body.ownerId] : []), ...ownerIds])
+      prevColumn.columnMembers.forEach((m) => {
+        if (!newMemberIdSet.has(m.userId)) removedUserIds.push(m.userId)
+      })
+    }
+
     const column = await prisma.column.update({
       where: { id },
       data: {
@@ -300,7 +347,7 @@ export async function boardRoutes(app: FastifyInstance) {
       },
     })
 
-    // ── Notify new members + add to Shared Drive ───────────
+    // ── Notify new members + sync Drive access ─────────────
     if (prevColumn && ownerIds && ownerIds.length > 0) {
       const prevMemberIds = new Set(prevColumn.columnMembers.map((m) => m.userId))
       const newMembers = column.columnMembers.filter((m) => !prevMemberIds.has(m.user.id))
@@ -312,9 +359,9 @@ export async function boardRoutes(app: FastifyInstance) {
         })
         const boardIsArchived = boardStatus?.isArchived ?? false
 
+        // ── Add new members to Drive ────────────────────────
         const newEmails: string[] = []
         for (const m of newMembers) {
-          // Add to Shared Drive
           const userWithEmail = await prisma.user.findUnique({
             where: { id: m.user.id }, select: { email: true },
           })
@@ -336,6 +383,28 @@ export async function boardRoutes(app: FastifyInstance) {
         }
         if (newEmails.length > 0) {
           await googleDrive.addMembersToSharedDrive(newEmails)
+          if (prevColumn.driveFolderId) {
+            await googleDrive.shareFolderWithMany(prevColumn.driveFolderId, newEmails)
+          }
+        }
+
+        // ── Remove Drive access for removed members ─────────
+        for (const userId of removedUserIds) {
+          const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } })
+          if (!user?.email) continue
+
+          // Revoke from column folder
+          if (prevColumn.driveFolderId) {
+            await googleDrive.revokePermission(prevColumn.driveFolderId, user.email)
+          }
+
+          // Remove from Shared Drive only if no longer a board member
+          const stillBoardMember = await prisma.boardMember.findUnique({
+            where: { boardId_userId: { boardId: prevColumn.boardId, userId } },
+          })
+          if (!stillBoardMember) {
+            await googleDrive.removeMembersFromSharedDrive([user.email])
+          }
         }
       })
     }
