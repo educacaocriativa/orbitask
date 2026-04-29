@@ -30,8 +30,10 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
   const [editTags, setEditTags]             = useState('')
   const [editDeadline, setEditDeadline]     = useState('')
   const [savingCard, setSavingCard]         = useState(false)
-  const [confirmAbort, setConfirmAbort]     = useState(false)
-  const [aborting, setAborting]             = useState(false)
+  const [confirmAbort, setConfirmAbort]         = useState(false)
+  const [aborting, setAborting]                 = useState(false)
+  const [confirmDeleteSectionId, setConfirmDeleteSectionId] = useState<string | null>(null)
+  const [deletingSection, setDeletingSection]   = useState(false)
 
   const isAdmin = user?.role === 'ADMIN'
 
@@ -93,6 +95,21 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
     if (!user) return false
     if (user.role === 'ADMIN') return true
     return section.ownerId === user.id
+  }
+
+  async function deleteSection(sectionId: string) {
+    setDeletingSection(true)
+    try {
+      await api.delete(`/sections/${sectionId}`)
+      const { data } = await api.get(`/cards/${cardId}`)
+      setCard(data.card)
+      toast.success('Seção redefinida ✓')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao excluir seção')
+    } finally {
+      setDeletingSection(false)
+      setConfirmDeleteSectionId(null)
+    }
   }
 
   async function saveSection(sectionId: string, content: Record<string, unknown>) {
@@ -379,6 +396,35 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                         <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/6 border border-white/12 text-white/40 font-body font-semibold">
                           🔒 somente leitura
                         </span>
+                      )}
+
+                      {/* Admin: redefinir seção */}
+                      {isAdmin && confirmDeleteSectionId !== section.id && (
+                        <button
+                          onClick={() => setConfirmDeleteSectionId(section.id)}
+                          title="Redefinir seção (Admin)"
+                          className="text-white/20 hover:text-red-400 transition-colors text-sm ml-1"
+                        >
+                          🗑
+                        </button>
+                      )}
+                      {isAdmin && confirmDeleteSectionId === section.id && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-red-500/40 bg-red-950/40 ml-1">
+                          <span className="text-[10px] text-red-300 font-display font-black">Redefinir?</span>
+                          <button
+                            onClick={() => deleteSection(section.id)}
+                            disabled={deletingSection}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-red-600/70 hover:bg-red-600 text-white font-display font-black disabled:opacity-40 transition-all"
+                          >
+                            {deletingSection ? '⏳' : 'Sim'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteSectionId(null)}
+                            className="text-[10px] px-1.5 py-0.5 rounded border border-white/15 text-white/50 hover:text-white/80 font-body transition-all"
+                          >
+                            Não
+                          </button>
+                        </div>
                       )}
                     </div>
 

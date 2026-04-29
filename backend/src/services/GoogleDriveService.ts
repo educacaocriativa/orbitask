@@ -81,6 +81,19 @@ export class GoogleDriveService {
     return this.createFolder('RECURSOS', parentFolderId)
   }
 
+  // ── Delete a folder (and all its contents) ───────────────
+  async deleteFolder(folderId: string): Promise<void> {
+    if (!this.drive) return
+    try {
+      await this.drive.files.delete({
+        fileId: folderId,
+        supportsAllDrives: true,
+      })
+    } catch (err) {
+      console.warn('GoogleDrive deleteFolder error:', (err as any)?.message)
+    }
+  }
+
   // ── Rename an existing folder ────────────────────────────
   async renameFolder(folderId: string, newName: string): Promise<void> {
     if (!this.drive) return
