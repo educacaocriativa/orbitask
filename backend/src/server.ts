@@ -24,6 +24,7 @@ import { websocketRoutes } from './websocket/boardSocket'
 
 import { AppError }          from './utils/AppError'
 import { startDeadlineCron } from './jobs/notificationQueue'
+import { startDriveSyncCron } from './jobs/driveSync'
 import { googleDrive }       from './services/GoogleDriveService'
 
 export async function buildApp() {
@@ -92,6 +93,7 @@ async function start() {
       console.warn('⚠️  MinIO/S3 unavailable at startup — file uploads disabled:', err.message)
     })
     startDeadlineCron()
+    startDriveSyncCron()
     await app.listen({ port: env.PORT, host: '0.0.0.0' })
     console.log(`\n🚀 Orbitask API  →  http://localhost:${env.PORT}`)
     console.log(`   WS Board       →  ws://localhost:${env.PORT}/ws/board/:id\n`)
