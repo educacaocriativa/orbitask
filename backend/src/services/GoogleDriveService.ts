@@ -142,6 +142,31 @@ export class GoogleDriveService {
     }))
   }
 
+  // ── List all permissions on a file/folder/drive ──────────
+  async listPermissions(fileId: string): Promise<Array<{ id: string; emailAddress?: string | null; role?: string | null; type?: string | null }>> {
+    if (!this.drive) return []
+    try {
+      const permissions: Array<{ id: string; emailAddress?: string | null; role?: string | null; type?: string | null }> = []
+      let pageToken: string | undefined
+      do {
+        const res = await this.drive.permissions.list({
+          fileId,
+          supportsAllDrives: true,
+          fields: 'nextPageToken, permissions(id, emailAddress, role, type)',
+          pageToken,
+        })
+        for (const p of res.data.permissions ?? []) {
+          if (p.id) permissions.push({ id: p.id, emailAddress: p.emailAddress, role: p.role, type: p.type })
+        }
+        pageToken = res.data.nextPageToken ?? undefined
+      } while (pageToken)
+      return permissions
+    } catch (err) {
+      console.warn('GoogleDrive listPermissions error:', (err as any)?.message)
+      return []
+    }
+  }
+
   // ── Find permission ID for an email on a file/drive ──────
   private async findPermissionId(fileId: string, email: string): Promise<string | null> {
     if (!this.drive) return null
