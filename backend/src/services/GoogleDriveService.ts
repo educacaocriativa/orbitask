@@ -142,6 +142,51 @@ export class GoogleDriveService {
     }))
   }
 
+  // ── Find permission ID for an email on a file/drive ──────
+  private async findPermissionId(fileId: string, email: string): Promise<string | null> {
+    if (!this.drive) return null
+    try {
+      const res = await this.drive.permissions.list({
+        fileId,
+        supportsAllDrives: true,
+        fields: 'permissions(id, emailAddress)',
+      })
+      const perm = res.data.permissions?.find(
+        (p) => p.emailAddress?.toLowerCase() === email.toLowerCase()
+      )
+      return perm?.id ?? null
+    } catch (err) {
+      console.warn(`GoogleDrive findPermissionId failed for ${email}:`, (err as any)?.message)
+      return null
+    }
+  }
+
+  // ── Revoke a user's permission from a folder/drive ───────
+  async revokePermission(fileId: string, email: string): Promise<void> {
+    if (!this.drive) return
+    const permId = await this.findPermissionId(fileId, email)
+    if (!permId) return
+    try {
+      await this.drive.permissions.delete({
+        fileId,
+        permissionId: permId,
+        supportsAllDrives: true,
+      })
+    } catch (err) {
+      console.warn(`GoogleDrive revokePermission failed for ${email}:`, (err as any)?.message)
+    }
+  }
+
+  // ── Revoke permissions for multiple users from a folder ──
+  async revokePermissionFromMany(fileId: string, emails: string[]): Promise<void> {
+    await Promise.allSettled(emails.map((e) => this.revokePermission(fileId, e)))
+  }
+
+  // ── Remove members from the Shared Drive ─────────────────
+  async removeMembersFromSharedDrive(emails: string[]): Promise<void> {
+    await this.revokePermissionFromMany(this.sharedDriveId, emails)
+  }
+
   // ── Test connection by listing Shared Drive ───────────────
   async testConnection(): Promise<{ ok: boolean; error?: string; details?: unknown }> {
     if (!this.drive) return { ok: false, error: 'Not configured' }
