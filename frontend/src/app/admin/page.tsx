@@ -444,6 +444,7 @@ export default function AdminPage() {
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
   const [logSearch, setLogSearch]   = useState('')
   const [selectedLog, setSelectedLog] = useState<Log | null>(null)
+  const [syncingDrive, setSyncingDrive] = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -453,6 +454,16 @@ export default function AdminPage() {
       api.get('/admin/whatsapp/status').then(({ data }) => setWhatsappStatus(data)),
     ]).catch(() => toast.error('Erro ao carregar dados')).finally(() => setIsLoading(false))
   }, [])
+
+  async function syncDrive() {
+    setSyncingDrive(true)
+    try {
+      const { data } = await api.post('/admin/drive/sync')
+      toast.success(`Drive sincronizado ✅ +${data.added} adicionado(s), -${data.removed} removido(s)`, { duration: 5000 })
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao sincronizar Drive')
+    } finally { setSyncingDrive(false) }
+  }
 
   async function toggleUser(user: User) {
     try {
@@ -492,12 +503,23 @@ export default function AdminPage() {
           <p className="text-xs font-display font-black tracking-[0.3em] text-amber-400/80 mb-1.5 uppercase">⚙ Mission Control</p>
           <div className="flex items-center justify-between">
             <h1 className="font-display text-2xl font-black text-white tracking-wide">Painel Administrativo</h1>
-            <div className={cn('flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-body font-bold',
-              whatsappStatus?.connected
-                ? 'bg-emerald-500/12 border-emerald-500/35 text-emerald-300'
-                : 'bg-red-500/12 border-red-500/30 text-red-300')}>
-              <div className={cn('w-2 h-2 rounded-full', whatsappStatus?.connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400')} />
-              WhatsApp {whatsappStatus?.connected ? 'Conectado' : 'Desconectado'}
+            <div className="flex items-center gap-3">
+              <motion.button
+                onClick={syncDrive}
+                disabled={syncingDrive}
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                title="Sincronizar acessos do Google Drive agora"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-blue-500/35 bg-blue-500/10 text-blue-300 text-xs font-body font-bold hover:bg-blue-500/20 disabled:opacity-50 transition-all"
+              >
+                {syncingDrive ? '⏳ Sincronizando...' : '🔄 Sync Drive'}
+              </motion.button>
+              <div className={cn('flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-body font-bold',
+                whatsappStatus?.connected
+                  ? 'bg-emerald-500/12 border-emerald-500/35 text-emerald-300'
+                  : 'bg-red-500/12 border-red-500/30 text-red-300')}>
+                <div className={cn('w-2 h-2 rounded-full', whatsappStatus?.connected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400')} />
+                WhatsApp {whatsappStatus?.connected ? 'Conectado' : 'Desconectado'}
+              </div>
             </div>
           </div>
         </motion.div>

@@ -14,7 +14,16 @@ export async function syncDriveAccess() {
 
   const serviceAccountEmail = env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.toLowerCase()
 
-  // ── 1. Carregar todas as missões ativas com membros ───────
+  // ── 1. Carregar ADMINs ativos — nunca removidos do Drive ─
+  const adminUsers = await prisma.user.findMany({
+    where: { role: 'ADMIN', isActive: true },
+    select: { email: true },
+  })
+  const adminEmails = new Set<string>(
+    adminUsers.map((u) => u.email.toLowerCase())
+  )
+
+  // ── 2. Carregar todas as missões ativas com membros ───────
   const boards = await prisma.board.findMany({
     where: { isArchived: false },
     select: {
@@ -25,8 +34,9 @@ export async function syncDriveAccess() {
     },
   })
 
-  // Conjunto de todos os e-mails autorizados (donos + membros de qualquer missão ativa)
-  const authorizedEmails = new Set<string>()
+  // Conjunto de todos os e-mails autorizados:
+  // ADMINs (sempre) + donos e membros de qualquer missão ativa
+  const authorizedEmails = new Set<string>(adminEmails)
   for (const board of boards) {
     if (board.owner.email) authorizedEmails.add(board.owner.email.toLowerCase())
     for (const m of board.members) {
@@ -108,6 +118,13 @@ export async function syncDriveAccess() {
     totalAdded += added
     totalRemoved += removed
     foldersChecked++
+  }
+
+  // ── 5. Garantir que ADMINs sejam Organizer no Shared Drive ─
+  // Organizer = aparece em "Drives Compartilhados" + pode gerenciar membros
+  if (env.GOOGLE_SHARED_DRIVE_ID && adminEmails.size > 0) {
+    console.log(`🔑 [Drive Sync] Garantindo papel Organizer para ${adminEmails.size} admin(s)...`)
+    await googleDrive.ensureOrganizersOnSharedDrive([...adminEmails])
   }
 
   const summary = { added: totalAdded, removed: totalRemoved, foldersChecked }

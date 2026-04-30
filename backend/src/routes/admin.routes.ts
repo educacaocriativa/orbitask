@@ -5,6 +5,7 @@ import { AdminService } from '../services/AdminService'
 import { requireAdmin } from '../middlewares/auth'
 import { WhatsAppService } from '../services/WhatsAppService'
 import { googleDrive } from '../services/GoogleDriveService'
+import { syncDriveAccess } from '../jobs/driveSync'
 import { prisma } from '../database/prisma'
 import { AppError } from '../utils/AppError'
 import { env } from '../config/env'
@@ -101,6 +102,15 @@ export async function adminRoutes(app: FastifyInstance) {
       console.error('❌ Error updating user profile:', err?.message, err?.code)
       throw new AppError(err?.message ?? 'Erro ao atualizar usuário', 500)
     }
+  })
+
+  // ── POST /admin/drive/sync — disparo manual do sync Drive ─
+  app.post('/admin/drive/sync', {
+    preHandler: [isAdmin],
+  }, async (_request, reply) => {
+    if (!googleDrive.isConfigured) throw new AppError('Google Drive não configurado', 503)
+    const result = await syncDriveAccess()
+    return reply.send(result)
   })
 
   // ── PATCH /admin/users/:id/password ─────────────────────

@@ -134,6 +134,36 @@ export class GoogleDriveService {
     await Promise.allSettled(emails.map((e) => this.shareFolder(folderId, e)))
   }
 
+  // ── Add admins as Organizer on the Shared Drive ──────────
+  // Organizer = vê o drive em "Drives Compartilhados" + gerencia membros
+  async ensureOrganizersOnSharedDrive(emails: string[]): Promise<void> {
+    if (!this.drive || !this.sharedDriveId) return
+    await Promise.allSettled(emails.map(async (email) => {
+      try {
+        const perms = await this.listPermissions(this.sharedDriveId)
+        const existing = perms.find((p) => p.emailAddress?.toLowerCase() === email.toLowerCase())
+        if (existing?.role === 'organizer') return
+        if (existing?.id) {
+          await this.drive!.permissions.update({
+            fileId: this.sharedDriveId,
+            permissionId: existing.id,
+            requestBody: { role: 'organizer' },
+            supportsAllDrives: true,
+          })
+        } else {
+          await this.drive!.permissions.create({
+            fileId: this.sharedDriveId,
+            requestBody: { role: 'organizer', type: 'user', emailAddress: email },
+            supportsAllDrives: true,
+            sendNotificationEmail: false,
+          })
+        }
+      } catch (err) {
+        console.warn(`GoogleDrive ensureOrganizer failed for ${email}:`, (err as any)?.message)
+      }
+    }))
+  }
+
   // ── Add members to the Shared Drive itself ───────────────
   async addMembersToSharedDrive(emails: string[]): Promise<void> {
     if (!this.drive) return
