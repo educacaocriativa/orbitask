@@ -277,6 +277,21 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                       ✏️
                     </button>
                   )}
+
+                  {/* Compartilhar — visível para todos */}
+                  {!confirmAbort && (
+                    <button
+                      onClick={() => {
+                        const url = `${window.location.origin}/board/${card.board?.id}?card=${cardId}`
+                        navigator.clipboard.writeText(url)
+                        toast.success('Link copiado! 🔗 Cole no WhatsApp para compartilhar.')
+                      }}
+                      title="Copiar link do card"
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-display font-black tracking-wide text-cyan-400/80 border border-cyan-500/25 hover:text-cyan-300 hover:border-cyan-500/55 hover:bg-cyan-500/10 transition-all">
+                      🔗 Compartilhar
+                    </button>
+                  )}
+
                   {isAdmin && !confirmAbort && (
                     <button onClick={() => setConfirmAbort(true)} title="Abortar missão"
                       className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-display font-black tracking-wide text-red-400/70 border border-red-500/20 hover:text-red-300 hover:border-red-500/50 hover:bg-red-500/10 transition-all">
