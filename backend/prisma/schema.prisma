@@ -421,6 +421,36 @@ enum CrmStage {
   FECHADO
 }
 
+model CrmProduct {
+  id          String  @id @default(uuid())
+  name        String
+  description String? @db.Text
+  price       String?
+  videoUrl    String? @map("video_url") @db.Text
+  features    Json?
+  isActive    Boolean @default(true) @map("is_active")
+
+  leads     CrmLeadProduct[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("crm_products")
+}
+
+model CrmLeadProduct {
+  id            String     @id @default(uuid())
+  leadId        String     @map("lead_id")
+  lead          CrmLead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  productId     String     @map("product_id")
+  product       CrmProduct @relation(fields: [productId], references: [id])
+  suggestedByAi Boolean    @default(false) @map("suggested_by_ai")
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  @@unique([leadId, productId])
+  @@map("crm_lead_products")
+}
+
 model CrmLead {
   id             String    @id @default(uuid())
   companyName    String    @map("company_name")
@@ -435,6 +465,7 @@ model CrmLead {
 
   decisionMakers CrmDecisionMaker[]
   stageHistory   CrmStageHistory[]
+  leadProducts   CrmLeadProduct[]
 
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")

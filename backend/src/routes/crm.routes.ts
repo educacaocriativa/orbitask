@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import axios from 'axios'
 import { CrmStage } from '@prisma/client'
 import { prisma } from '../database/prisma'
 import { authenticate } from '../middlewares/auth'
@@ -23,6 +24,10 @@ const LEAD_INCLUDE = {
     orderBy: { createdAt: 'desc' as const },
     take: 50,
     include: { movedBy: { select: { id: true, name: true } } },
+  },
+  leadProducts: {
+    include: { product: true },
+    orderBy: { createdAt: 'asc' as const },
   },
 }
 
@@ -380,12 +385,12 @@ export async function crmRoutes(app: FastifyInstance) {
 
     if (!crmAi.isConfigured) return reply.send({ ok: true })
 
+    // Busca produtos ativos para contexto da IA
+    const products = await prisma.crmProduct.findMany({ where: { isActive: true } })
+
     // Processa com IA
-    const { reply: aiReply, nextStage, tokensUsed } = await crmAi.handleLeadReply(
-      lead,
-      messageText,
-      conversationHistory,
-    )
+    const { reply: aiReply, nextStage, tokensUsed, recommendedProductId } =
+      await crmAi.handleLeadReply(lead, messageText, conversationHistory, products)
 
     if (!aiReply) return reply.send({ ok: true })
 
@@ -394,6 +399,15 @@ export async function crmRoutes(app: FastifyInstance) {
     const whatsapp = new WhatsAppService()
     const phone = decisionMaker.phonePersonal ?? decisionMaker.phoneCompany ?? ''
     await whatsapp.sendMessage({ phone, message: aiReply })
+
+    // Se IA recomendou um produto, associa ao lead automaticamente
+    if (recommendedProductId) {
+      await prisma.crmLeadProduct.upsert({
+        where:  { leadId_productId: { leadId: lead.id, productId: recommendedProductId } },
+        create: { leadId: lead.id, productId: recommendedProductId, suggestedByAi: true },
+        update: {},
+      })
+    }
 
     // Atualiza conversa e avança etapa se necessário
     const newConversation: ConvMsg[] = [
@@ -423,7 +437,6 @@ export async function crmRoutes(app: FastifyInstance) {
         }),
       ])
     } else {
-      // Só registra a conversa sem mudar etapa
       await prisma.crmStageHistory.create({
         data: {
           leadId:         lead.id,
@@ -443,9 +456,141 @@ export async function crmRoutes(app: FastifyInstance) {
   app.get('/crm/ai/status', { preHandler: [authenticate] }, async (request, reply) => {
     if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
     return reply.send({
-      configured: crmAi.isConfigured,
-      model:      'claude-sonnet-4-6',
+      configured:  crmAi.isConfigured,
+      model:       'claude-sonnet-4-6',
+      apifyReady:  !!(env.APIFY_API_TOKEN && env.APIFY_ACTOR_ID),
     })
+  })
+
+  // ═══════════════════════════════════════════════════════
+  //  PRODUTOS
+  // ═══════════════════════════════════════════════════════
+
+  // ── GET /crm/products ─────────────────────────────────
+  app.get('/crm/products', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const products = await prisma.crmProduct.findMany({
+      where:   { isActive: true },
+      orderBy: { createdAt: 'asc' },
+    })
+    return reply.send({ products })
+  })
+
+  // ── POST /crm/products ────────────────────────────────
+  app.post('/crm/products', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const body = request.body as {
+      name: string; description?: string; price?: string
+      videoUrl?: string; features?: string[]
+    }
+    if (!body.name?.trim()) throw new AppError('Nome do produto é obrigatório', 400)
+
+    const product = await prisma.crmProduct.create({
+      data: {
+        name:        body.name.trim(),
+        description: body.description?.trim() || null,
+        price:       body.price?.trim() || null,
+        videoUrl:    body.videoUrl?.trim() || null,
+        features:    body.features?.length ? body.features : null,
+      },
+    })
+    return reply.status(201).send({ product })
+  })
+
+  // ── PATCH /crm/products/:id ───────────────────────────
+  app.patch('/crm/products/:id', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const { id } = request.params as { id: string }
+    const body = request.body as {
+      name?: string; description?: string; price?: string
+      videoUrl?: string; features?: string[]
+    }
+    const product = await prisma.crmProduct.update({
+      where: { id },
+      data: {
+        ...(body.name        !== undefined && { name:        body.name.trim() }),
+        ...(body.description !== undefined && { description: body.description?.trim() || null }),
+        ...(body.price       !== undefined && { price:       body.price?.trim() || null }),
+        ...(body.videoUrl    !== undefined && { videoUrl:    body.videoUrl?.trim() || null }),
+        ...(body.features    !== undefined && { features:    body.features }),
+      },
+    })
+    return reply.send({ product })
+  })
+
+  // ── DELETE /crm/products/:id ──────────────────────────
+  app.delete('/crm/products/:id', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const { id } = request.params as { id: string }
+    await prisma.crmProduct.update({ where: { id }, data: { isActive: false } })
+    return reply.send({ ok: true })
+  })
+
+  // ── POST /crm/leads/:id/products/:productId ───────────
+  app.post('/crm/leads/:id/products/:productId', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const { id, productId } = request.params as { id: string; productId: string }
+    const lp = await prisma.crmLeadProduct.upsert({
+      where:  { leadId_productId: { leadId: id, productId } },
+      create: { leadId: id, productId, suggestedByAi: false },
+      update: {},
+      include: { product: true },
+    })
+    return reply.status(201).send({ leadProduct: lp })
+  })
+
+  // ── DELETE /crm/leads/:id/products/:productId ─────────
+  app.delete('/crm/leads/:id/products/:productId', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const { id, productId } = request.params as { id: string; productId: string }
+    await prisma.crmLeadProduct.deleteMany({ where: { leadId: id, productId } })
+    return reply.send({ ok: true })
+  })
+
+  // ═══════════════════════════════════════════════════════
+  //  APIFY
+  // ═══════════════════════════════════════════════════════
+
+  // ── POST /crm/apify/run — dispara ator Apify ──────────
+  app.post('/crm/apify/run', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!env.APIFY_API_TOKEN) throw new AppError('APIFY_API_TOKEN não configurado', 503)
+    if (!env.APIFY_ACTOR_ID)  throw new AppError('APIFY_ACTOR_ID não configurado', 503)
+
+    const body = request.body as Record<string, unknown> | undefined
+    const input = body ?? {}
+
+    try {
+      const { data } = await axios.post<{ data?: { id?: string; status?: string } }>(
+        `https://api.apify.com/v2/acts/${env.APIFY_ACTOR_ID!}/runs`,
+        input,
+        { headers: { Authorization: `Bearer ${env.APIFY_API_TOKEN!}` } },
+      )
+      return reply.send({
+        runId:   data.data?.id,
+        status:  data.data?.status,
+        message: 'Ator Apify iniciado. Os leads chegarão via webhook quando o run concluir.',
+      })
+    } catch (err: any) {
+      throw new AppError(`Apify error: ${err?.response?.data?.error?.message ?? err.message}`, 502)
+    }
+  })
+
+  // ── GET /crm/apify/run/:runId — status de um run ──────
+  app.get('/crm/apify/run/:runId', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!env.APIFY_API_TOKEN) throw new AppError('APIFY_API_TOKEN não configurado', 503)
+
+    const { runId } = request.params as { runId: string }
+    try {
+      const { data } = await axios.get<{ data?: unknown }>(
+        `https://api.apify.com/v2/actor-runs/${runId}`,
+        { headers: { Authorization: `Bearer ${env.APIFY_API_TOKEN!}` } },
+      )
+      return reply.send({ run: data.data })
+    } catch {
+      throw new AppError('Run não encontrado', 404)
+    }
   })
 }
 

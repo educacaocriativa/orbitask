@@ -13,6 +13,15 @@ interface DecisionMaker {
   phoneCompany:  string | null
 }
 
+interface Product {
+  id:          string
+  name:        string
+  description: string | null
+  price:       string | null
+  videoUrl:    string | null
+  features:    unknown
+}
+
 interface Lead {
   id:             string
   companyName:    string
@@ -42,8 +51,8 @@ const STAGE_LABELS: Record<CrmStage, string> = {
   FECHADO:            'Fechado com o Cliente',
 }
 
-// ── System prompt (cacheable) ─────────────────────────────
-const SYSTEM_PROMPT = `Você é um assistente comercial especializado, conversando via WhatsApp em nome da empresa.
+// ── Base system prompt (cacheable) ───────────────────────
+const BASE_SYSTEM_PROMPT = `Você é um assistente comercial especializado, conversando via WhatsApp em nome da empresa.
 Seu objetivo é qualificar leads e avançá-los no funil de vendas de forma natural, respeitosa e consultiva.
 
 ## FUNIL DE VENDAS (etapas em ordem)
@@ -60,6 +69,8 @@ Seu objetivo é qualificar leads e avançá-los no funil de vendas de forma natu
 - Fazer perguntas abertas para entender as dores e necessidades do decisor
 - Apresentar valor antes de apresentar o produto
 - Identificar o nível de consciência do decisor com base nas respostas
+- Quando o momento for certo, recomendar o produto mais adequado ao perfil do lead
+- Compartilhar o link do vídeo do produto no momento certo (após identificar interesse genuíno)
 - Avançar o lead no funil quando houver sinal claro de progresso
 
 ## SINAIS PARA AVANÇAR DE ETAPA
@@ -74,23 +85,50 @@ Seu objetivo é qualificar leads e avançá-los no funil de vendas de forma natu
 - Nunca pressione ou faça hard sell
 - Um assunto por mensagem
 - Se não houver sinal claro de avanço, mantenha a etapa atual
+- Envie o link do vídeo apenas uma vez, quando o lead já demonstrou interesse
 - Responda em português brasileiro
 
 ## FORMATO DE RESPOSTA OBRIGATÓRIO
 Ao final de CADA resposta, inclua EXATAMENTE este bloco JSON (sem markdown, sem código):
 
 [AI_DECISION]
-{"reply":"<mensagem para enviar ao decisor>","move_to_stage":"<ETAPA_OU_NULL>"}
+{"reply":"<mensagem para enviar ao decisor>","move_to_stage":"<ETAPA_OU_NULL>","recommended_product_id":"<ID_DO_PRODUTO_OU_NULL>"}
 [/AI_DECISION]
 
-O campo "move_to_stage" deve ser:
-- Uma das etapas: "NIVEL_CONSCIENCIA_1", "NIVEL_CONSCIENCIA_2", "NIVEL_CONSCIENCIA_3", "FINALIZADO", "FECHADO"
-- null se não há sinal suficiente para avançar
+Os campos:
+- "move_to_stage": etapa para avançar ("NIVEL_CONSCIENCIA_1"..."FECHADO") ou null
+- "recommended_product_id": ID do produto mais adequado para este lead, ou null se ainda não há informação suficiente
 
 Exemplo correto:
 [AI_DECISION]
-{"reply":"Olá João! Vi que a Tech Solutions está crescendo bastante. Quais são os principais desafios que vocês enfrentam hoje em dia?","move_to_stage":null}
+{"reply":"Olá João! Vi que a Tech Solutions está crescendo bastante. Quais são os principais desafios que vocês enfrentam hoje em dia?","move_to_stage":null,"recommended_product_id":null}
 [/AI_DECISION]`
+
+// ── Gera system prompt com catálogo de produtos ───────────
+function buildSystemPrompt(products: Product[]): string {
+  if (!products.length) return BASE_SYSTEM_PROMPT
+
+  const catalog = products.map((p) => {
+    const features = Array.isArray(p.features) ? (p.features as string[]).join(', ') : ''
+    return [
+      `ID: ${p.id}`,
+      `Nome: ${p.name}`,
+      p.description ? `Descrição: ${p.description}` : '',
+      p.price       ? `Preço: ${p.price}` : '',
+      features       ? `Diferenciais: ${features}` : '',
+      p.videoUrl     ? `Vídeo de apresentação: ${p.videoUrl}` : '',
+    ].filter(Boolean).join('\n')
+  }).join('\n\n---\n\n')
+
+  return `${BASE_SYSTEM_PROMPT}
+
+## CATÁLOGO DE PRODUTOS DISPONÍVEIS
+Use estes produtos para recomendar ao lead no momento certo. Escolha o mais adequado com base na conversa.
+
+${catalog}
+
+Quando enviar o link do vídeo, inclua-o naturalmente na mensagem, ex: "Tenho um vídeo curto que explica exatamente isso: [link]"`
+}
 
 // ── CRM AI Service ────────────────────────────────────────
 export class CrmAiService {
@@ -109,7 +147,11 @@ export class CrmAiService {
   }
 
   // ── Gera e envia a primeira mensagem ao decisor ──────────
-  async sendFirstMessage(lead: Lead, decisionMaker: DecisionMaker): Promise<string | null> {
+  async sendFirstMessage(
+    lead:           Lead,
+    decisionMaker:  DecisionMaker,
+    products:       Product[] = [],
+  ): Promise<string | null> {
     if (!this.client) return null
 
     const phone = decisionMaker.phonePersonal ?? decisionMaker.phoneCompany
@@ -123,7 +165,8 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
 - Curta e direta (máximo 2-3 linhas)
 - Natural e humana, não robótica
 - Despertar curiosidade sem revelar tudo
-- Terminar com uma pergunta aberta sobre desafios`
+- Terminar com uma pergunta aberta sobre desafios
+- NÃO mencione produtos ou preços ainda`
 
     try {
       const response = await this.client.messages.create({
@@ -132,7 +175,7 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
         system: [
           {
             type:          'text',
-            text:          SYSTEM_PROMPT,
+            text:          buildSystemPrompt(products),
             cache_control: { type: 'ephemeral' },
           },
         ],
@@ -142,12 +185,7 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
       const result = this.parseAiResponse(response)
       if (!result) return null
 
-      // Envia via WhatsApp
-      await this.whatsapp.sendMessage({
-        phone,
-        message: result.reply,
-      })
-
+      await this.whatsapp.sendMessage({ phone, message: result.reply })
       return result.reply
     } catch (err) {
       console.error('[CrmAI] sendFirstMessage error:', err)
@@ -160,29 +198,26 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
     lead:                Lead,
     incomingMessage:     string,
     conversationHistory: ConversationMessage[],
-  ): Promise<AiReplyResult> {
+    products:            Product[] = [],
+  ): Promise<AiReplyResult & { recommendedProductId: string | null }> {
     if (!this.client) {
-      return { reply: '', nextStage: null, tokensUsed: 0 }
+      return { reply: '', nextStage: null, tokensUsed: 0, recommendedProductId: null }
     }
 
-    // Contexto do lead para o primeiro turno da conversa
     const context = `Lead: ${lead.companyName}${
       lead.decisionMakers[0]
         ? ` | Decisor: ${lead.decisionMakers[0].name}${lead.decisionMakers[0].role ? ` (${lead.decisionMakers[0].role})` : ''}`
         : ''
     }`
 
-    // Monta histórico de mensagens
     const messages: Anthropic.Messages.MessageParam[] = []
 
     if (conversationHistory.length === 0) {
-      // Primeira resposta do lead — adiciona contexto
       messages.push({
         role:    'user',
         content: `[Contexto: ${context}]\n\nMensagem do decisor: ${incomingMessage}`,
       })
     } else {
-      // Histórico existente
       for (const msg of conversationHistory) {
         messages.push({ role: msg.role, content: msg.content })
       }
@@ -196,7 +231,7 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
         system: [
           {
             type:          'text',
-            text:          SYSTEM_PROMPT,
+            text:          buildSystemPrompt(products),
             cache_control: { type: 'ephemeral' },
           },
         ],
@@ -207,36 +242,45 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
       const result     = this.parseAiResponse(response)
 
       if (!result) {
-        return { reply: '', nextStage: null, tokensUsed }
+        return { reply: '', nextStage: null, tokensUsed, recommendedProductId: null }
       }
 
-      return { reply: result.reply, nextStage: result.nextStage, tokensUsed }
+      return {
+        reply:                result.reply,
+        nextStage:            result.nextStage,
+        tokensUsed,
+        recommendedProductId: result.recommendedProductId,
+      }
     } catch (err) {
       console.error('[CrmAI] handleLeadReply error:', err)
-      return { reply: '', nextStage: null, tokensUsed: 0 }
+      return { reply: '', nextStage: null, tokensUsed: 0, recommendedProductId: null }
     }
   }
 
   // ── Parser da resposta do Claude ─────────────────────────
   private parseAiResponse(
     response: Anthropic.Messages.Message,
-  ): { reply: string; nextStage: CrmStage | null } | null {
+  ): { reply: string; nextStage: CrmStage | null; recommendedProductId: string | null } | null {
     const textBlock = response.content.find((b) => b.type === 'text')
     if (!textBlock || textBlock.type !== 'text') return null
 
     const text = textBlock.text
 
-    // Extrai o bloco JSON entre [AI_DECISION] e [/AI_DECISION]
     const match = text.match(/\[AI_DECISION\]\s*([\s\S]*?)\s*\[\/AI_DECISION\]/)
     if (!match) {
       console.warn('[CrmAI] No AI_DECISION block found in response')
-      return { reply: text.replace(/\[AI_DECISION\][\s\S]*?\[\/AI_DECISION\]/g, '').trim(), nextStage: null }
+      return {
+        reply:               text.replace(/\[AI_DECISION\][\s\S]*?\[\/AI_DECISION\]/g, '').trim(),
+        nextStage:           null,
+        recommendedProductId: null,
+      }
     }
 
     try {
       const parsed = JSON.parse(match[1].trim()) as {
-        reply:          string
-        move_to_stage:  string | null
+        reply:                  string
+        move_to_stage:          string | null
+        recommended_product_id: string | null
       }
 
       const VALID_STAGES: CrmStage[] = [
@@ -248,7 +292,11 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
         ? (parsed.move_to_stage as CrmStage)
         : null
 
-      return { reply: parsed.reply, nextStage }
+      return {
+        reply:               parsed.reply,
+        nextStage,
+        recommendedProductId: parsed.recommended_product_id ?? null,
+      }
     } catch (err) {
       console.error('[CrmAI] JSON parse error:', err, 'Raw:', match[1])
       return null

@@ -41,8 +41,11 @@ const envSchema = z.object({
 
   CRM_WEBHOOK_SECRET: z.string().default('crm-webhook-secret-change-me'),
 
-  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_API_KEY:  z.string().optional(),
   CRM_AI_SENDER_NAME: z.string().default('Assistente Comercial'),
+
+  APIFY_API_TOKEN:  z.string().optional(),
+  APIFY_ACTOR_ID:   z.string().optional(),
 })
 
 const _env = envSchema.safeParse(process.env)

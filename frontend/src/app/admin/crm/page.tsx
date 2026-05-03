@@ -15,6 +15,14 @@ type CrmStage =
   | 'NIVEL_CONSCIENCIA_1' | 'NIVEL_CONSCIENCIA_2' | 'NIVEL_CONSCIENCIA_3'
   | 'FINALIZADO' | 'FECHADO'
 
+interface Product {
+  id: string; name: string; description?: string; price?: string
+  videoUrl?: string; features?: string[]
+}
+interface LeadProduct {
+  id: string; productId: string; suggestedByAi: boolean
+  product: Product
+}
 interface DecisionMaker {
   id: string; name: string; role?: string; email?: string
   phoneCompany?: string; phonePersonal?: string; linkedin?: string; isPrimary: boolean
@@ -30,6 +38,7 @@ interface Lead {
   stage: CrmStage; position: number
   decisionMakers: DecisionMaker[]
   stageHistory: StageHistory[]
+  leadProducts: LeadProduct[]
   _count?: { stageHistory: number }
   createdAt: string
 }
@@ -519,6 +528,113 @@ function AiConversation({ messages }: { messages: any }) {
   )
 }
 
+// ── Product Modal ─────────────────────────────────────────
+function ProductModal({ onClose, onSaved, editProduct }: {
+  onClose: () => void; onSaved: () => void; editProduct?: Product | null
+}) {
+  const isEdit = !!editProduct
+  const [name, setName]           = useState(editProduct?.name ?? '')
+  const [description, setDesc]    = useState(editProduct?.description ?? '')
+  const [price, setPrice]         = useState(editProduct?.price ?? '')
+  const [videoUrl, setVideo]      = useState(editProduct?.videoUrl ?? '')
+  const [features, setFeatures]   = useState((editProduct?.features ?? []).join('\n'))
+  const [saving, setSaving]       = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) { toast.error('Nome é obrigatório'); return }
+    setSaving(true)
+    try {
+      const body = {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        price: price.trim() || undefined,
+        videoUrl: videoUrl.trim() || undefined,
+        features: features.split('\n').map((f) => f.trim()).filter(Boolean),
+      }
+      if (isEdit) {
+        await api.patch(`/crm/products/${editProduct!.id}`, body)
+        toast.success('Produto atualizado ✅')
+      } else {
+        await api.post('/crm/products', body)
+        toast.success('Produto cadastrado 📦')
+      }
+      onSaved(); onClose()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao salvar produto')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={onClose} className="absolute inset-0 bg-black/65 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.93, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.93 }} transition={{ type: 'spring', damping: 22, stiffness: 320 }}
+        className="relative w-full max-w-lg glass rounded-2xl p-6 shadow-glass max-h-[90vh] overflow-y-auto scrollbar-space"
+      >
+        <div className="absolute -top-px left-6 right-6 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h3 className="font-display text-base font-black tracking-wider text-white">
+              {isEdit ? '✏️ EDITAR PRODUTO' : '📦 NOVO PRODUTO'}
+            </h3>
+            <p className="text-sm text-white/55 font-body mt-0.5">
+              {isEdit ? editProduct?.name : 'Cadastrar produto para o CRM'}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white text-xl transition-colors">✕</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {[
+            ['Nome do Produto *', name, setName, 'text', 'Ex: Plano Pro, Consultoria Anual...'],
+            ['Preço / Condição', price, setPrice, 'text', 'Ex: R$ 197/mês, A partir de R$ 500...'],
+            ['Link do Vídeo 🎬', videoUrl, setVideo, 'url', 'https://youtube.com/... ou qualquer link'],
+          ].map(([label, val, setter, type, ph]) => (
+            <div key={label as string}>
+              <label className="block text-[11px] font-display font-black text-white/60 uppercase tracking-widest mb-1.5">{label as string}</label>
+              <input value={val as string} onChange={(e) => (setter as any)(e.target.value)}
+                type={type as string} placeholder={ph as string}
+                className="w-full px-3 py-2.5 rounded-xl text-sm font-body input-space" />
+            </div>
+          ))}
+
+          <div>
+            <label className="block text-[11px] font-display font-black text-white/60 uppercase tracking-widest mb-1.5">Descrição</label>
+            <textarea value={description} onChange={(e) => setDesc(e.target.value)}
+              rows={2} placeholder="Descreva o produto brevemente..."
+              className="w-full px-3 py-2.5 rounded-xl text-sm font-body input-space resize-none" />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-display font-black text-white/60 uppercase tracking-widest mb-1.5">
+              Diferenciais / Features
+              <span className="text-white/35 font-body font-normal ml-1">(um por linha)</span>
+            </label>
+            <textarea value={features} onChange={(e) => setFeatures(e.target.value)}
+              rows={3} placeholder={"Economia de 30% no processo\nSuporte 24/7\nIntegração com qualquer sistema"}
+              className="w-full px-3 py-2.5 rounded-xl text-sm font-body input-space resize-none" />
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl text-sm font-body border border-white/18 text-white/70 hover:bg-white/7 transition-all">
+              Cancelar
+            </button>
+            <motion.button type="submit" disabled={saving} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+              className="flex-[2] py-2.5 rounded-xl text-sm font-display font-black text-white disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #d97706, #f59e0b)', boxShadow: '0 0 20px rgba(217,119,6,0.4)' }}>
+              {saving ? '⏳ Salvando...' : isEdit ? '✅ Salvar' : '📦 Cadastrar Produto'}
+            </motion.button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  )
+}
+
 // ── New Lead Modal ────────────────────────────────────────
 function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [companyName, setCompanyName] = useState('')
@@ -628,8 +744,10 @@ export default function CrmPage() {
   const [kanban, setKanban]     = useState<Record<CrmStage, Lead[]> | null>(null)
   const [total, setTotal]       = useState(0)
   const [loading, setLoading]   = useState(true)
-  const [openLeadId, setOpenLeadId] = useState<string | null>(null)
-  const [showNewLead, setShowNewLead] = useState(false)
+  const [openLeadId, setOpenLeadId]     = useState<string | null>(null)
+  const [showNewLead, setShowNewLead]   = useState(false)
+  const [showProduct, setShowProduct]   = useState(false)
+  const [editProduct, setEditProduct]   = useState<Product | null>(null)
 
   useEffect(() => {
     if (user && user.role !== 'ADMIN') { router.replace('/board'); return }
@@ -667,6 +785,11 @@ export default function CrmPage() {
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm text-white/55 font-body font-semibold">{total} lead{total !== 1 ? 's' : ''}</span>
+              <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={() => { setEditProduct(null); setShowProduct(true) }}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-display font-black border border-amber-500/40 text-amber-300 hover:bg-amber-500/12 transition-all">
+                📦 Cadastrar Produto
+              </motion.button>
               <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowNewLead(true)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-display font-black text-white"
@@ -734,6 +857,13 @@ export default function CrmPage() {
           <NewLeadModal
             onClose={() => setShowNewLead(false)}
             onCreated={fetchLeads}
+          />
+        )}
+        {showProduct && (
+          <ProductModal
+            editProduct={editProduct}
+            onClose={() => { setShowProduct(false); setEditProduct(null) }}
+            onSaved={fetchLeads}
           />
         )}
       </AnimatePresence>
