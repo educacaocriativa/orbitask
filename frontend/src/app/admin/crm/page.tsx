@@ -15,6 +15,11 @@ type CrmStage =
   | 'NIVEL_CONSCIENCIA_1' | 'NIVEL_CONSCIENCIA_2' | 'NIVEL_CONSCIENCIA_3'
   | 'FINALIZADO' | 'FECHADO'
 
+interface Skill {
+  id: string; name: string; description?: string
+  content: string; trigger?: string; isActive: boolean; order: number
+}
+
 interface Product {
   id: string; name: string; description?: string; price?: string
   videoUrl?: string; features?: string[]
@@ -786,6 +791,186 @@ function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
   )
 }
 
+// ── Skills Modal ──────────────────────────────────────────
+function SkillsModal({ onClose }: { onClose: () => void }) {
+  const [skills, setSkills]       = useState<Skill[]>([])
+  const [editing, setEditing]     = useState<Skill | null>(null)
+  const [creating, setCreating]   = useState(false)
+  const [saving, setSaving]       = useState(false)
+  const [form, setForm]           = useState({ name: '', description: '', content: '', trigger: '' })
+
+  const load = useCallback(async () => {
+    const { data } = await api.get('/crm/skills')
+    setSkills(data.skills)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  function openNew() {
+    setForm({ name: '', description: '', content: '', trigger: '' })
+    setEditing(null)
+    setCreating(true)
+  }
+
+  function openEdit(s: Skill) {
+    setForm({ name: s.name, description: s.description ?? '', content: s.content, trigger: s.trigger ?? '' })
+    setEditing(s)
+    setCreating(true)
+  }
+
+  async function handleSave() {
+    if (!form.name.trim() || !form.content.trim()) { toast.error('Nome e conteúdo são obrigatórios'); return }
+    setSaving(true)
+    try {
+      if (editing) {
+        await api.patch(`/crm/skills/${editing.id}`, form)
+        toast.success('Skill atualizada ✅')
+      } else {
+        await api.post('/crm/skills', form)
+        toast.success('Skill criada ✅')
+      }
+      setCreating(false); await load()
+    } catch { toast.error('Erro ao salvar skill') } finally { setSaving(false) }
+  }
+
+  async function toggleActive(s: Skill) {
+    await api.patch(`/crm/skills/${s.id}`, { isActive: !s.isActive })
+    await load()
+  }
+
+  async function handleDelete(id: string) {
+    await api.delete(`/crm/skills/${id}`)
+    toast.success('Skill removida')
+    await load()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={onClose} className="absolute inset-0 bg-black/65 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.93, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.93 }} transition={{ type: 'spring', damping: 22, stiffness: 320 }}
+        className="relative w-full max-w-2xl glass rounded-2xl shadow-glass flex flex-col max-h-[88vh]"
+      >
+        <div className="absolute -top-px left-6 right-6 h-px bg-gradient-to-r from-transparent via-emerald-400/60 to-transparent" />
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/8 shrink-0">
+          <div>
+            <h3 className="font-display text-base font-black tracking-wider text-white">🧠 SKILLS DE VENDAS</h3>
+            <p className="text-xs text-white/50 font-body mt-0.5">Técnicas injetadas no prompt do Claude Opus 4.7</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+              onClick={openNew}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-display font-black text-white"
+              style={{ background: 'linear-gradient(135deg,#059669,#06b6d4)' }}>
+              + Nova Skill
+            </motion.button>
+            <button onClick={onClose} className="text-white/40 hover:text-white text-xl transition-colors">✕</button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-3 scrollbar-space">
+          {/* Form criar/editar */}
+          {creating && (
+            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+              className="p-4 rounded-xl bg-emerald-900/20 border border-emerald-500/30 space-y-3 mb-4">
+              <p className="text-xs font-display font-black text-emerald-400 uppercase tracking-widest">
+                {editing ? '✏️ Editar Skill' : '✨ Nova Skill'}
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-display font-black text-white/50 uppercase tracking-widest mb-1">Nome *</label>
+                  <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="Ex: Tratamento de Objeção de Preço"
+                    className="w-full px-3 py-2 rounded-xl text-sm font-body input-space" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-display font-black text-white/50 uppercase tracking-widest mb-1">Gatilho (quando usar)</label>
+                  <input value={form.trigger} onChange={e => setForm(f => ({ ...f, trigger: e.target.value }))}
+                    placeholder="Ex: lead mencionar preço"
+                    className="w-full px-3 py-2 rounded-xl text-sm font-body input-space" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-display font-black text-white/50 uppercase tracking-widest mb-1">Descrição</label>
+                  <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder="Breve descrição"
+                    className="w-full px-3 py-2 rounded-xl text-sm font-body input-space" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-display font-black text-white/50 uppercase tracking-widest mb-1">Técnica / Conteúdo * <span className="text-white/30 normal-case font-body font-normal">(texto injetado no prompt do Claude)</span></label>
+                  <textarea value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
+                    placeholder="Descreva a técnica em detalhes. Ex: Quando o decisor mencionar preço antes da hora, responda: 'Antes de falar em investimento, quero garantir que estamos falando da solução certa para você...'"
+                    rows={5} className="w-full px-3 py-2 rounded-xl text-sm font-body input-space resize-none" />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setCreating(false)}
+                  className="flex-1 py-2 rounded-xl text-sm font-body border border-white/15 text-white/60 hover:bg-white/5 transition-all">
+                  Cancelar
+                </button>
+                <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  onClick={handleSave} disabled={saving}
+                  className="flex-[2] py-2 rounded-xl text-sm font-display font-black text-white disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg,#059669,#06b6d4)' }}>
+                  {saving ? '⏳ Salvando...' : '✅ Salvar Skill'}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Lista de skills */}
+          {skills.length === 0 && !creating ? (
+            <div className="text-center py-12 text-white/30">
+              <p className="text-4xl mb-3">🧠</p>
+              <p className="text-sm font-body">Nenhuma skill criada ainda.</p>
+              <p className="text-xs font-body mt-1">Clique em &quot;+ Nova Skill&quot; para começar.</p>
+            </div>
+          ) : (
+            skills.map((s) => (
+              <motion.div key={s.id} layout
+                className={`p-4 rounded-xl border transition-all ${s.isActive ? 'bg-white/4 border-white/10' : 'bg-white/2 border-white/5 opacity-50'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${s.isActive ? 'bg-emerald-400' : 'bg-white/20'}`} />
+                      <p className="text-sm font-display font-bold text-white truncate">{s.name}</p>
+                    </div>
+                    {s.trigger && (
+                      <p className="text-[11px] text-emerald-400/80 font-body mb-1">⚡ {s.trigger}</p>
+                    )}
+                    {s.description && (
+                      <p className="text-xs text-white/50 font-body mb-2">{s.description}</p>
+                    )}
+                    <p className="text-xs text-white/35 font-body line-clamp-2 italic">{s.content}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button onClick={() => toggleActive(s)}
+                      title={s.isActive ? 'Desativar' : 'Ativar'}
+                      className={`text-xs px-2 py-1 rounded-lg border transition-all ${s.isActive ? 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10' : 'border-white/15 text-white/40 hover:bg-white/5'}`}>
+                      {s.isActive ? '✓ Ativo' : 'Inativo'}
+                    </button>
+                    <button onClick={() => openEdit(s)}
+                      className="text-xs px-2 py-1 rounded-lg border border-white/15 text-white/50 hover:bg-white/5 transition-all">
+                      ✏️
+                    </button>
+                    <button onClick={() => handleDelete(s.id)}
+                      className="text-xs px-2 py-1 rounded-lg border border-red-500/30 text-red-400/60 hover:bg-red-500/10 transition-all">
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 // ── Main CRM Page ─────────────────────────────────────────
 export default function CrmPage() {
   const { user }  = useAuthStore()
@@ -797,6 +982,7 @@ export default function CrmPage() {
   const [showNewLead, setShowNewLead]   = useState(false)
   const [showProduct, setShowProduct]   = useState(false)
   const [editProduct, setEditProduct]   = useState<Product | null>(null)
+  const [showSkills, setShowSkills]     = useState(false)
   useEffect(() => {
     if (user && user.role !== 'ADMIN') { router.replace('/board'); return }
   }, [user, router])
@@ -844,6 +1030,11 @@ export default function CrmPage() {
             </div>
             <div className="flex items-center gap-3">
               <span className="text-sm text-white/55 font-body font-semibold">{total} lead{total !== 1 ? 's' : ''}</span>
+              <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={() => setShowSkills(true)}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-display font-black border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/12 transition-all">
+                🧠 Skills
+              </motion.button>
               <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 onClick={() => { setEditProduct(null); setShowProduct(true) }}
                 className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-display font-black border border-amber-500/40 text-amber-300 hover:bg-amber-500/12 transition-all">
@@ -924,6 +1115,9 @@ export default function CrmPage() {
             onClose={() => { setShowProduct(false); setEditProduct(null) }}
             onSaved={fetchLeads}
           />
+        )}
+        {showSkills && (
+          <SkillsModal onClose={() => setShowSkills(false)} />
         )}
       </AnimatePresence>
     </div>

@@ -132,6 +132,13 @@ async function ensureCrmTables() {
       FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE,
       FOREIGN KEY (product_id) REFERENCES crm_products(id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+    [`crm_skills`, `CREATE TABLE IF NOT EXISTS crm_skills (
+      id VARCHAR(191) NOT NULL PRIMARY KEY, name VARCHAR(191) NOT NULL,
+      description TEXT, content LONGTEXT NOT NULL, trigger VARCHAR(191),
+      is_active TINYINT(1) NOT NULL DEFAULT 1, \`order\` INT NOT NULL DEFAULT 0,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
   ]
   for (const [name, sql] of tables) {
     try {

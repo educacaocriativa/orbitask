@@ -438,6 +438,20 @@ model CrmProduct {
   @@map("crm_products")
 }
 
+model CrmSkill {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  content     String   @db.Text
+  trigger     String?
+  isActive    Boolean  @default(true) @map("is_active")
+  order       Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("crm_skills")
+}
+
 model CrmLeadProduct {
   id            String     @id @default(uuid())
   leadId        String     @map("lead_id")

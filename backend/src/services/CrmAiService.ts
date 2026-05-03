@@ -22,10 +22,19 @@ interface Product {
   features:    unknown
 }
 
+interface Skill {
+  id:          string
+  name:        string
+  description: string | null
+  content:     string
+  trigger:     string | null
+}
+
 interface Lead {
   id:             string
   companyName:    string
   companyPhone:   string | null
+  segment?:       string | null
   decisionMakers: DecisionMaker[]
 }
 
@@ -35,105 +44,135 @@ interface ConversationMessage {
 }
 
 interface AiReplyResult {
-  reply:       string
-  nextStage:   CrmStage | null
-  tokensUsed:  number
+  reply:               string
+  nextStage:           CrmStage | null
+  tokensUsed:          number
+  recommendedProductId: string | null
 }
 
-// ── Stage labels (português) ──────────────────────────────
+// ── Stage labels ──────────────────────────────────────────
 const STAGE_LABELS: Record<CrmStage, string> = {
   LEAD:               'Lead',
   PRIMEIRO_CONTATO:   'Primeiro Contato',
-  NIVEL_CONSCIENCIA_1:'Nível de Consciência 1 — sabe que tem o problema',
-  NIVEL_CONSCIENCIA_2:'Nível de Consciência 2 — sabe que existem soluções',
-  NIVEL_CONSCIENCIA_3:'Nível de Consciência 3 — conhece nossa solução e está considerando',
-  FINALIZADO:         'Finalizado — negociação em andamento',
+  NIVEL_CONSCIENCIA_1:'Nível de Consciência 1 — reconhece o problema',
+  NIVEL_CONSCIENCIA_2:'Nível de Consciência 2 — conhece soluções do mercado',
+  NIVEL_CONSCIENCIA_3:'Nível de Consciência 3 — avaliando nossa solução',
+  FINALIZADO:         'Finalizado — proposta em negociação',
   FECHADO:            'Fechado com o Cliente',
 }
 
-// ── Base system prompt (cacheable) ───────────────────────
-const BASE_SYSTEM_PROMPT = `Você é um assistente comercial especializado, conversando via WhatsApp em nome da empresa.
-Seu objetivo é qualificar leads e avançá-los no funil de vendas de forma natural, respeitosa e consultiva.
+// ── Base do sistema de vendas (fundação técnica) ──────────
+const SALES_FOUNDATION = `
+## FUNDAÇÃO DE VENDAS CONSULTIVA
 
-## FUNIL DE VENDAS (etapas em ordem)
-1. LEAD — contato inicial, ainda não conversamos
-2. PRIMEIRO_CONTATO — enviamos a primeira mensagem, aguardando resposta
-3. NIVEL_CONSCIENCIA_1 — o decisor reconhece que tem um problema ou necessidade
-4. NIVEL_CONSCIENCIA_2 — o decisor sabe que existem soluções no mercado
-5. NIVEL_CONSCIENCIA_3 — o decisor conhece nossa solução e está avaliando
+### Mentalidade
+- Você é um consultor, não um vendedor. Seu trabalho é entender profundamente o problema do decisor antes de qualquer coisa.
+- Ajude o decisor a enxergar o valor por conta própria — não empurre, guie.
+- Cada mensagem tem um único objetivo claro. Nunca sobrecarregue com informação.
+
+### Técnica SPIN (use progressivamente conforme a etapa)
+- **Situação**: entenda o contexto atual da empresa ("Como vocês estão fazendo isso hoje?")
+- **Problema**: identifique as dores reais ("O que mais incomoda nesse processo?")
+- **Implicação**: amplie a percepção do impacto ("O que acontece quando isso falha?")
+- **Necessidade de Solução**: faça o decisor articular o valor ("Como seria diferente se isso funcionasse bem?")
+
+### Rapport e Escuta Ativa
+- Sempre valide o que o decisor disse antes de avançar ("Entendo, então o principal desafio é...")
+- Use o nome do decisor pelo menos uma vez por conversa
+- Espelhe o tom: se a pessoa é direta, seja direto; se é conversacional, seja mais warm
+- Referencie algo específico da empresa ou do segmento deles para mostrar que fez a lição de casa
+
+### Tratamento de Objeções (Framework ACRA)
+- **Acolha**: "Faz todo sentido essa preocupação..."
+- **Clarifique**: "Só para entender melhor, o que específicamente te preocupa?"
+- **Responda**: apresente o contra-argumento com evidência ou pergunta
+- **Avance**: "Faz sentido? O que seria necessário para você se sentir seguro nisso?"
+
+### Urgência Natural (nunca force)
+- Use dados de mercado e exemplos do segmento para criar urgência
+- "Tenho visto muitas empresas do seu segmento passando por isso exatamente agora..."
+- Nunca: "Essa oferta expira hoje" ou pressão artificial
+
+### Por Etapa do Funil
+- **LEAD → PRIMEIRO_CONTATO**: mensagem personalizada, curiosidade, sem vender nada, termine com uma pergunta aberta
+- **PRIMEIRO_CONTATO → NC1**: foque em identificar o problema central, faça perguntas de Situação e Problema
+- **NC1 → NC2**: mostre que o problema tem solução, apresente possibilidades sem forçar a nossa
+- **NC2 → NC3**: diferencie nossa solução, use prova social do segmento, apresente o vídeo do produto se relevante
+- **NC3 → FINALIZADO**: gere urgência natural, trate objeções, proponha próximos passos concretos
+- **FINALIZADO → FECHADO**: suporte à decisão, remova fricção final, celebre a decisão
+
+### Sinais de Avanço de Etapa
+- NC1: decisor menciona um desafio, dor ou objetivo
+- NC2: pergunta sobre soluções ou alternativas disponíveis
+- NC3: demonstra interesse específico em nossa proposta ou produto
+- FINALIZADO: pede proposta, preço ou próximos passos
+- FECHADO: confirma a decisão de fechar
+
+### Regras de Comunicação no WhatsApp
+- Mensagens curtas: máximo 3-4 linhas por vez
+- Um assunto, uma pergunta por mensagem
+- Nunca use lista com bullets — é informal e frio para WhatsApp
+- Emojis com moderação: 1 por mensagem no máximo
+- Sem formalidades excessivas — seja humano, não corporativo`
+
+// ── Gera system prompt completo ───────────────────────────
+function buildSystemPrompt(products: Product[], skills: Skill[]): string {
+  const skillsSection = skills.length > 0
+    ? `\n\n## SKILLS PERSONALIZADAS ATIVAS\nUse as técnicas abaixo quando o contexto da conversa for adequado:\n\n${
+        skills.map((s, i) => [
+          `### Skill ${i + 1}: ${s.name}`,
+          s.trigger ? `**Quando usar:** ${s.trigger}` : '',
+          s.description ? `**Descrição:** ${s.description}` : '',
+          `**Técnica:**\n${s.content}`,
+        ].filter(Boolean).join('\n')).join('\n\n---\n\n')
+      }`
+    : ''
+
+  const catalogSection = products.length > 0
+    ? `\n\n## CATÁLOGO DE PRODUTOS\nApresente o produto mais adequado ao momento certo da conversa. Envie o link do vídeo apenas uma vez, quando houver interesse genuíno.\n\n${
+        products.map((p) => {
+          const features = Array.isArray(p.features) ? (p.features as string[]).join(', ') : ''
+          return [
+            `**ID:** ${p.id}`,
+            `**Nome:** ${p.name}`,
+            p.description ? `**Descrição:** ${p.description}` : '',
+            p.price       ? `**Preço:** ${p.price}` : '',
+            features       ? `**Diferenciais:** ${features}` : '',
+            p.videoUrl     ? `**Vídeo:** ${p.videoUrl}` : '',
+          ].filter(Boolean).join('\n')
+        }).join('\n\n---\n\n')
+      }`
+    : ''
+
+  return `Você é um assistente comercial especializado em vendas consultivas, conversando via WhatsApp em nome da empresa.
+
+## FUNIL DE VENDAS
+1. LEAD — contato identificado, ainda não conversamos
+2. PRIMEIRO_CONTATO — primeiro contato realizado, aguardando resposta
+3. NIVEL_CONSCIENCIA_1 — decisor reconhece que tem um problema
+4. NIVEL_CONSCIENCIA_2 — decisor sabe que existem soluções no mercado
+5. NIVEL_CONSCIENCIA_3 — decisor conhece e avalia nossa solução
 6. FINALIZADO — proposta enviada, negociação em andamento
-7. FECHADO — contrato assinado, cliente conquistado
-
-## SUAS RESPONSABILIDADES
-- Conversar de forma natural, humana e consultiva pelo WhatsApp
-- Fazer perguntas abertas para entender as dores e necessidades do decisor
-- Apresentar valor antes de apresentar o produto
-- Identificar o nível de consciência do decisor com base nas respostas
-- Quando o momento for certo, recomendar o produto mais adequado ao perfil do lead
-- Compartilhar o link do vídeo do produto no momento certo (após identificar interesse genuíno)
-- Avançar o lead no funil quando houver sinal claro de progresso
-
-## SINAIS PARA AVANÇAR DE ETAPA
-- Para NIVEL_CONSCIENCIA_1: decisor mencionou um desafio, dor ou objetivo
-- Para NIVEL_CONSCIENCIA_2: decisor perguntou sobre soluções ou alternativas
-- Para NIVEL_CONSCIENCIA_3: decisor demonstrou interesse específico em nossa proposta
-- Para FINALIZADO: decisor pediu proposta, preço ou próximos passos concretos
-- Para FECHADO: decisor confirmou a decisão de fechar
-
-## REGRAS IMPORTANTES
-- Mensagens curtas e diretas (WhatsApp não é e-mail)
-- Nunca pressione ou faça hard sell
-- Um assunto por mensagem
-- Se não houver sinal claro de avanço, mantenha a etapa atual
-- Envie o link do vídeo apenas uma vez, quando o lead já demonstrou interesse
-- Responda em português brasileiro
+7. FECHADO — cliente conquistado
+${SALES_FOUNDATION}${skillsSection}${catalogSection}
 
 ## FORMATO DE RESPOSTA OBRIGATÓRIO
-Ao final de CADA resposta, inclua EXATAMENTE este bloco JSON (sem markdown, sem código):
+Ao final de CADA resposta, inclua EXATAMENTE este bloco (sem markdown):
 
 [AI_DECISION]
-{"reply":"<mensagem para enviar ao decisor>","move_to_stage":"<ETAPA_OU_NULL>","recommended_product_id":"<ID_DO_PRODUTO_OU_NULL>"}
+{"reply":"<mensagem para o decisor>","move_to_stage":"<ETAPA_OU_NULL>","recommended_product_id":"<ID_OU_NULL>"}
 [/AI_DECISION]
 
-Os campos:
-- "move_to_stage": etapa para avançar ("NIVEL_CONSCIENCIA_1"..."FECHADO") ou null
-- "recommended_product_id": ID do produto mais adequado para este lead, ou null se ainda não há informação suficiente
+- "move_to_stage": próxima etapa apenas se houver sinal claro de progresso, senão null
+- "recommended_product_id": ID do produto mais adequado ao perfil, ou null
 
-Exemplo correto:
-[AI_DECISION]
-{"reply":"Olá João! Vi que a Tech Solutions está crescendo bastante. Quais são os principais desafios que vocês enfrentam hoje em dia?","move_to_stage":null,"recommended_product_id":null}
-[/AI_DECISION]`
-
-// ── Gera system prompt com catálogo de produtos ───────────
-function buildSystemPrompt(products: Product[]): string {
-  if (!products.length) return BASE_SYSTEM_PROMPT
-
-  const catalog = products.map((p) => {
-    const features = Array.isArray(p.features) ? (p.features as string[]).join(', ') : ''
-    return [
-      `ID: ${p.id}`,
-      `Nome: ${p.name}`,
-      p.description ? `Descrição: ${p.description}` : '',
-      p.price       ? `Preço: ${p.price}` : '',
-      features       ? `Diferenciais: ${features}` : '',
-      p.videoUrl     ? `Vídeo de apresentação: ${p.videoUrl}` : '',
-    ].filter(Boolean).join('\n')
-  }).join('\n\n---\n\n')
-
-  return `${BASE_SYSTEM_PROMPT}
-
-## CATÁLOGO DE PRODUTOS DISPONÍVEIS
-Use estes produtos para recomendar ao lead no momento certo. Escolha o mais adequado com base na conversa.
-
-${catalog}
-
-Quando enviar o link do vídeo, inclua-o naturalmente na mensagem, ex: "Tenho um vídeo curto que explica exatamente isso: [link]"`
+Responda sempre em português brasileiro.`
 }
 
 // ── CRM AI Service ────────────────────────────────────────
 export class CrmAiService {
-  private client:    Anthropic | null
-  private whatsapp:  WhatsAppService
+  private client:   Anthropic | null
+  private whatsapp: WhatsAppService
 
   constructor() {
     this.whatsapp = new WhatsAppService()
@@ -142,15 +181,14 @@ export class CrmAiService {
       : null
   }
 
-  get isConfigured(): boolean {
-    return !!this.client
-  }
+  get isConfigured(): boolean { return !!this.client }
 
-  // ── Gera e envia a primeira mensagem ao decisor ──────────
+  // ── Gera primeira mensagem ────────────────────────────────
   async sendFirstMessage(
-    lead:           Lead,
-    decisionMaker:  DecisionMaker,
-    products:       Product[] = [],
+    lead:          Lead,
+    decisionMaker: DecisionMaker,
+    products:      Product[] = [],
+    skills:        Skill[]   = [],
   ): Promise<string | null> {
     if (!this.client) return null
 
@@ -158,27 +196,26 @@ export class CrmAiService {
     if (!phone) return null
 
     const prompt = `Gere a primeira mensagem de prospecção para:
-- Empresa: ${lead.companyName}
-- Decisor: ${decisionMaker.name}${decisionMaker.role ? ` (${decisionMaker.role})` : ''}
+- Empresa: ${lead.companyName}${lead.segment ? ` (${lead.segment})` : ''}
+- Decisor: ${decisionMaker.name}${decisionMaker.role ? ` — ${decisionMaker.role}` : ''}
 
-Esta é a primeira vez que entramos em contato. A mensagem deve ser:
-- Curta e direta (máximo 2-3 linhas)
-- Natural e humana, não robótica
-- Despertar curiosidade sem revelar tudo
-- Terminar com uma pergunta aberta sobre desafios
-- NÃO mencione produtos ou preços ainda`
+Esta é a PRIMEIRA vez que entramos em contato. A mensagem deve:
+- Ser curta (máximo 3 linhas)
+- Ser humana e personalizada para a empresa/segmento
+- Despertar curiosidade sem revelar o produto
+- Terminar com UMA pergunta aberta sobre desafios ou objetivos
+- NÃO mencionar produto, preço ou "solução" ainda`
 
     try {
       const response = await this.client.messages.create({
-        model:      'claude-sonnet-4-6',
-        max_tokens: 512,
-        system: [
-          {
-            type:          'text',
-            text:          buildSystemPrompt(products),
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
+        model:      'claude-opus-4-7',
+        max_tokens: 1024,
+        thinking:   { type: 'adaptive' },
+        system: [{
+          type:          'text',
+          text:          buildSystemPrompt(products, skills),
+          cache_control: { type: 'ephemeral' },
+        }],
         messages: [{ role: 'user', content: prompt }],
       })
 
@@ -193,82 +230,64 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
     }
   }
 
-  // ── Processa resposta do lead e gera próxima mensagem ────
+  // ── Processa resposta do lead ─────────────────────────────
   async handleLeadReply(
     lead:                Lead,
     incomingMessage:     string,
     conversationHistory: ConversationMessage[],
     products:            Product[] = [],
-  ): Promise<AiReplyResult & { recommendedProductId: string | null }> {
+    skills:              Skill[]   = [],
+  ): Promise<AiReplyResult> {
     if (!this.client) {
       return { reply: '', nextStage: null, tokensUsed: 0, recommendedProductId: null }
     }
 
-    const context = `Lead: ${lead.companyName}${
+    const context = `Lead: ${lead.companyName}${lead.segment ? ` [${lead.segment}]` : ''}${
       lead.decisionMakers[0]
         ? ` | Decisor: ${lead.decisionMakers[0].name}${lead.decisionMakers[0].role ? ` (${lead.decisionMakers[0].role})` : ''}`
         : ''
     }`
 
-    const messages: Anthropic.Messages.MessageParam[] = []
-
-    if (conversationHistory.length === 0) {
-      messages.push({
-        role:    'user',
-        content: `[Contexto: ${context}]\n\nMensagem do decisor: ${incomingMessage}`,
-      })
-    } else {
-      for (const msg of conversationHistory) {
-        messages.push({ role: msg.role, content: msg.content })
-      }
-      messages.push({ role: 'user', content: incomingMessage })
-    }
+    const messages: Anthropic.Messages.MessageParam[] = conversationHistory.length === 0
+      ? [{ role: 'user', content: `[Contexto: ${context}]\n\nMensagem do decisor: ${incomingMessage}` }]
+      : [...conversationHistory.map(m => ({ role: m.role, content: m.content })), { role: 'user', content: incomingMessage }]
 
     try {
       const response = await this.client.messages.create({
-        model:      'claude-sonnet-4-6',
-        max_tokens: 1024,
-        system: [
-          {
-            type:          'text',
-            text:          buildSystemPrompt(products),
-            cache_control: { type: 'ephemeral' },
-          },
-        ],
+        model:      'claude-opus-4-7',
+        max_tokens: 2048,
+        thinking:   { type: 'adaptive' },
+        system: [{
+          type:          'text',
+          text:          buildSystemPrompt(products, skills),
+          cache_control: { type: 'ephemeral' },
+        }],
         messages,
       })
 
       const tokensUsed = (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0)
       const result     = this.parseAiResponse(response)
 
-      if (!result) {
-        return { reply: '', nextStage: null, tokensUsed, recommendedProductId: null }
-      }
+      if (!result) return { reply: '', nextStage: null, tokensUsed, recommendedProductId: null }
 
-      return {
-        reply:                result.reply,
-        nextStage:            result.nextStage,
-        tokensUsed,
-        recommendedProductId: result.recommendedProductId,
-      }
+      return { reply: result.reply, nextStage: result.nextStage, tokensUsed, recommendedProductId: result.recommendedProductId }
     } catch (err) {
       console.error('[CrmAI] handleLeadReply error:', err)
       return { reply: '', nextStage: null, tokensUsed: 0, recommendedProductId: null }
     }
   }
 
-  // ── Parser da resposta do Claude ─────────────────────────
+  // ── Parser da resposta ────────────────────────────────────
   private parseAiResponse(
     response: Anthropic.Messages.Message,
   ): { reply: string; nextStage: CrmStage | null; recommendedProductId: string | null } | null {
     const textBlock = response.content.find((b) => b.type === 'text')
     if (!textBlock || textBlock.type !== 'text') return null
 
-    const text = textBlock.text
-
+    const text  = textBlock.text
     const match = text.match(/\[AI_DECISION\]\s*([\s\S]*?)\s*\[\/AI_DECISION\]/)
+
     if (!match) {
-      console.warn('[CrmAI] No AI_DECISION block found in response')
       return {
         reply:               text.replace(/\[AI_DECISION\][\s\S]*?\[\/AI_DECISION\]/g, '').trim(),
         nextStage:           null,
@@ -283,22 +302,14 @@ Esta é a primeira vez que entramos em contato. A mensagem deve ser:
         recommended_product_id: string | null
       }
 
-      const VALID_STAGES: CrmStage[] = [
-        'NIVEL_CONSCIENCIA_1', 'NIVEL_CONSCIENCIA_2', 'NIVEL_CONSCIENCIA_3',
-        'FINALIZADO', 'FECHADO',
-      ]
-
-      const nextStage = parsed.move_to_stage && VALID_STAGES.includes(parsed.move_to_stage as CrmStage)
+      const VALID: CrmStage[] = ['NIVEL_CONSCIENCIA_1','NIVEL_CONSCIENCIA_2','NIVEL_CONSCIENCIA_3','FINALIZADO','FECHADO']
+      const nextStage = parsed.move_to_stage && VALID.includes(parsed.move_to_stage as CrmStage)
         ? (parsed.move_to_stage as CrmStage)
         : null
 
-      return {
-        reply:               parsed.reply,
-        nextStage,
-        recommendedProductId: parsed.recommended_product_id ?? null,
-      }
+      return { reply: parsed.reply, nextStage, recommendedProductId: parsed.recommended_product_id ?? null }
     } catch (err) {
-      console.error('[CrmAI] JSON parse error:', err, 'Raw:', match[1])
+      console.error('[CrmAI] JSON parse error:', err)
       return null
     }
   }

@@ -163,14 +163,18 @@ export async function crmRoutes(app: FastifyInstance) {
     if (toStage === 'PRIMEIRO_CONTATO' && crmAi.isConfigured) {
       setImmediate(async () => {
         try {
-          const fullLead = await prisma.crmLead.findUnique({
-            where: { id },
-            include: { decisionMakers: { orderBy: { isPrimary: 'desc' } } },
-          })
+          const [fullLead, products, skills] = await Promise.all([
+            prisma.crmLead.findUnique({
+              where: { id },
+              include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }] } },
+            }),
+            (prisma as any).crmProduct?.findMany({ where: { isActive: true } }) ?? [],
+            (prisma as any).crmSkill?.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } }) ?? [],
+          ])
           if (!fullLead) return
           const primary = fullLead.decisionMakers[0]
           if (!primary) return
-          const msg = await crmAi.sendFirstMessage(fullLead, primary)
+          const msg = await crmAi.sendFirstMessage(fullLead, primary, products, skills)
           if (msg) {
             await prisma.crmStageHistory.create({
               data: {
@@ -388,12 +392,15 @@ export async function crmRoutes(app: FastifyInstance) {
 
     if (!crmAi.isConfigured) return reply.send({ ok: true })
 
-    // Busca produtos ativos para contexto da IA
-    const products = await prisma.crmProduct.findMany({ where: { isActive: true } })
+    // Busca produtos e skills ativos para contexto da IA
+    const [products, skills] = await Promise.all([
+      (prisma as any).crmProduct?.findMany({ where: { isActive: true } }) ?? [],
+      (prisma as any).crmSkill?.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } }) ?? [],
+    ])
 
     // Processa com IA
     const { reply: aiReply, nextStage, tokensUsed, recommendedProductId } =
-      await crmAi.handleLeadReply(lead, messageText, conversationHistory, products)
+      await crmAi.handleLeadReply(lead, messageText, conversationHistory, products, skills)
 
     if (!aiReply) return reply.send({ ok: true })
 
@@ -460,7 +467,7 @@ export async function crmRoutes(app: FastifyInstance) {
     if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
     return reply.send({
       configured:  crmAi.isConfigured,
-      model:       'claude-sonnet-4-6',
+      model:       'claude-opus-4-7',
       apifyReady:  !!(env.APIFY_API_TOKEN && env.APIFY_ACTOR_ID),
     })
   })
@@ -547,6 +554,58 @@ export async function crmRoutes(app: FastifyInstance) {
     if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
     const { id, productId } = request.params as { id: string; productId: string }
     await prisma.crmLeadProduct.deleteMany({ where: { leadId: id, productId } })
+    return reply.send({ ok: true })
+  })
+
+  // ═══════════════════════════════════════════════════════
+  //  SKILLS DE VENDAS
+  // ═══════════════════════════════════════════════════════
+
+  app.get('/crm/skills', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const skills = await (prisma as any).crmSkill.findMany({ orderBy: { order: 'asc' } })
+    return reply.send({ skills })
+  })
+
+  app.post('/crm/skills', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const body = request.body as { name: string; description?: string; content: string; trigger?: string }
+    if (!body.name?.trim() || !body.content?.trim()) throw new AppError('Nome e conteúdo são obrigatórios', 400)
+    const last = await (prisma as any).crmSkill.findFirst({ orderBy: { order: 'desc' } })
+    const skill = await (prisma as any).crmSkill.create({
+      data: {
+        name:        body.name.trim(),
+        description: body.description?.trim() || null,
+        content:     body.content.trim(),
+        trigger:     body.trigger?.trim() || null,
+        order:       (last?.order ?? -1) + 1,
+      },
+    })
+    return reply.status(201).send({ skill })
+  })
+
+  app.patch('/crm/skills/:id', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const { id } = request.params as { id: string }
+    const body = request.body as { name?: string; description?: string; content?: string; trigger?: string; isActive?: boolean; order?: number }
+    const skill = await (prisma as any).crmSkill.update({
+      where: { id },
+      data: {
+        ...(body.name        !== undefined && { name:        body.name.trim() }),
+        ...(body.description !== undefined && { description: body.description?.trim() || null }),
+        ...(body.content     !== undefined && { content:     body.content.trim() }),
+        ...(body.trigger     !== undefined && { trigger:     body.trigger?.trim() || null }),
+        ...(body.isActive    !== undefined && { isActive:    body.isActive }),
+        ...(body.order       !== undefined && { order:       body.order }),
+      },
+    })
+    return reply.send({ skill })
+  })
+
+  app.delete('/crm/skills/:id', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    const { id } = request.params as { id: string }
+    await (prisma as any).crmSkill.delete({ where: { id } })
     return reply.send({ ok: true })
   })
 
