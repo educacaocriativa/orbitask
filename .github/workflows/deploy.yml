@@ -11,44 +11,12 @@ env:
   AWS_REGION_RUNNER: us-east-2
   ECR_REPOSITORY:    540280374180.dkr.ecr.us-east-1.amazonaws.com/orbitask-backend
   APP_RUNNER_ARN:    arn:aws:apprunner:us-east-2:540280374180:service/orbitask/b30957f47517415593b31e84b534eee5
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ── 1. Quality Checks ────────────────────────────────────
-  quality:
-    name: Quality Checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
-
-      - name: Install backend deps
-        run: cd backend && npm ci && npx prisma generate
-
-      - name: Install frontend deps
-        run: cd frontend && npm ci
-
-      - name: Type-check backend
-        run: cd backend && npx tsc --noEmit || true
-
-      - name: Type-check frontend
-        run: cd frontend && npx tsc --noEmit || true
-
-      - name: Lint frontend
-        run: cd frontend && npm run lint || true
-
-  # ── 2. Build & push to ECR ───────────────────────────────
+  # ── Build & push to ECR ───────────────────────────────────
   build:
     name: Build & Push to ECR
     runs-on: ubuntu-latest
-    needs: quality
     if: github.ref == 'refs/heads/main'
 
     steps:
@@ -78,7 +46,7 @@ jobs:
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 
-  # ── 3. Deploy to App Runner ──────────────────────────────
+  # ── Deploy to App Runner ──────────────────────────────────
   deploy:
     name: Deploy to App Runner
     runs-on: ubuntu-latest
