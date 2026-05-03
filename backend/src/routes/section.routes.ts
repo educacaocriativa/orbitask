@@ -67,6 +67,26 @@ export async function sectionRoutes(app: FastifyInstance) {
       })
     }
 
+    // Log mensagem salva
+    const plainText = extractPlainText(content)
+    if (plainText.trim()) {
+      await prisma.accessLog.create({
+        data: {
+          userId:    request.user.id,
+          action:    'SECTION_SAVED',
+          ipAddress: request.ip,
+          userAgent: request.headers['user-agent'] as string,
+          metadata: JSON.parse(JSON.stringify({
+            sectionId:   id,
+            cardId:      section.card.id,
+            cardTitle:   section.card.title,
+            columnTitle: section.column.title,
+            preview:     plainText.slice(0, 200),
+          })),
+        },
+      })
+    }
+
     return reply.send({ section: updated })
   })
 
@@ -139,6 +159,24 @@ export async function sectionRoutes(app: FastifyInstance) {
         url: `/files/${storagePath}`, // served via static or MinIO presigned URL
         cardSectionId: id,
         uploadedById: request.user.id,
+      },
+    })
+
+    // Log arquivo enviado
+    await prisma.accessLog.create({
+      data: {
+        userId:    request.user.id,
+        action:    'FILE_UPLOADED',
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] as string,
+        metadata: JSON.parse(JSON.stringify({
+          fileId:    file.id,
+          fileName:  file.originalName,
+          fileType:  file.fileType,
+          sizeBytes: file.sizeBytes,
+          cardId:    section.cardId,
+          columnTitle: section.column?.title ?? null,
+        })),
       },
     })
 

@@ -46,19 +46,21 @@ const ROLES = [
 
 // ── Action label helper ──────────────────────────────────
 function actionLabel(action: string): { label: string; color: string } {
-  if (action === 'LOGIN')        return { label: 'Entrou no sistema',         color: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25' }
-  if (action === 'LOGOUT')       return { label: 'Saiu do sistema',           color: 'text-white/55 bg-white/5 border-white/14' }
-  if (action === 'MOVE_BLOCKED') return { label: '🚫 Tentou mover sem permissão', color: 'text-red-300 bg-red-500/12 border-red-500/30' }
-  if (action.startsWith('POST:/boards') && action.includes('/cards')) return { label: 'Criou um card',       color: 'text-violet-300 bg-violet-500/10 border-violet-500/25' }
-  if (action.startsWith('POST:/boards'))   return { label: 'Criou uma missão',  color: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/22' }
-  if (action.startsWith('POST:/columns'))  return { label: 'Criou uma etapa',   color: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/22' }
-  if (action.startsWith('PATCH:/cards'))   return { label: 'Editou um card',    color: 'text-amber-300 bg-amber-500/10 border-amber-500/25' }
-  if (action.startsWith('POST:/cards') && action.includes('/move')) return { label: 'Moveu um card',  color: 'text-amber-300 bg-amber-500/10 border-amber-500/25' }
-  if (action.startsWith('PATCH:/columns')) return { label: 'Editou uma etapa',  color: 'text-amber-300 bg-amber-500/10 border-amber-500/25' }
-  if (action.startsWith('POST:/users/me/avatar')) return { label: 'Atualizou avatar', color: 'text-pink-300 bg-pink-500/10 border-pink-500/25' }
-  if (action.startsWith('PATCH:/users/me'))       return { label: 'Atualizou perfil', color: 'text-pink-300 bg-pink-500/10 border-pink-500/25' }
-  if (action.includes('/sections'))               return { label: 'Atualizou seção',  color: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/25' }
-  if (action.includes('/files'))                  return { label: 'Enviou arquivo',   color: 'text-teal-300 bg-teal-500/10 border-teal-500/25' }
+  if (action === 'LOGIN')           return { label: '🟢 Entrou no sistema',          color: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25' }
+  if (action === 'LOGOUT')          return { label: '⚪ Saiu do sistema',             color: 'text-white/55 bg-white/5 border-white/14' }
+  if (action === 'MOVE_BLOCKED')    return { label: '🚫 Tentou mover sem permissão', color: 'text-red-300 bg-red-500/12 border-red-500/30' }
+  if (action === 'CARD_CREATED')    return { label: '✨ Criou um card',               color: 'text-violet-300 bg-violet-500/10 border-violet-500/25' }
+  if (action === 'CARD_MOVED')      return { label: '🚀 Moveu um card',               color: 'text-amber-300 bg-amber-500/10 border-amber-500/25' }
+  if (action === 'CARD_ARCHIVED')   return { label: '📦 Arquivou um card',            color: 'text-orange-300 bg-orange-500/10 border-orange-500/25' }
+  if (action === 'CARD_RESTORED')   return { label: '♻️ Restaurou um card',           color: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/25' }
+  if (action === 'SECTION_SAVED')   return { label: '💬 Enviou mensagem/comentário', color: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/25' }
+  if (action === 'FILE_UPLOADED')   return { label: '📎 Enviou um arquivo',           color: 'text-teal-300 bg-teal-500/10 border-teal-500/25' }
+  if (action === 'MENTION_REPLIED') return { label: '↩️ Respondeu uma marcação',     color: 'text-pink-300 bg-pink-500/10 border-pink-500/25' }
+  if (action.startsWith('POST:/boards') && action.includes('/cards')) return { label: '✨ Criou um card',      color: 'text-violet-300 bg-violet-500/10 border-violet-500/25' }
+  if (action.startsWith('POST:/boards'))   return { label: '🛸 Criou uma missão',     color: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/22' }
+  if (action.startsWith('PATCH:/columns')) return { label: '⚙️ Editou uma etapa',    color: 'text-amber-300 bg-amber-500/10 border-amber-500/25' }
+  if (action.startsWith('POST:/users/me/avatar')) return { label: '🖼️ Atualizou avatar', color: 'text-pink-300 bg-pink-500/10 border-pink-500/25' }
+  if (action.startsWith('PATCH:/users/me'))       return { label: '✏️ Atualizou perfil', color: 'text-pink-300 bg-pink-500/10 border-pink-500/25' }
   return { label: action, color: 'text-cyan-300 bg-cyan-500/8 border-cyan-500/22' }
 }
 
@@ -94,13 +96,18 @@ function formatActivityTxt(user: { name: string; email: string }, logs: any[]): 
     const m = log.metadata as Record<string, any> | null
     if (m) {
       if (m.cardTitle)        lines.push(`     Card: "${m.cardTitle}"`)
+      if (m.columnTitle)      lines.push(`     Etapa: ${m.columnTitle}`)
       if (m.fromColumnTitle)  lines.push(`     De: ${m.fromColumnTitle}`)
+      if (m.toColumnTitle)    lines.push(`     Para: ${m.toColumnTitle}`)
       if (m.toColumn)         lines.push(`     Para: ${m.toColumn}`)
-      if (m.reason === 'already_moved') lines.push(`     Motivo: já havia movido este card`)
-      if (m.reason === 'not_column_member') lines.push(`     Motivo: não é membro da etapa de origem`)
+      if (m.deadline)         lines.push(`     Prazo: ${new Date(m.deadline).toLocaleString('pt-BR')}`)
+      if (m.reason === 'already_moved')      lines.push(`     Motivo: já havia movido este card`)
+      if (m.reason === 'not_column_member')  lines.push(`     Motivo: não é membro da etapa de origem`)
       if (m.movedBy)          lines.push(`     Movido por: ${m.movedBy}`)
-      if (m.deadline)         lines.push(`     Prazo definido: ${new Date(m.deadline).toLocaleString('pt-BR')}`)
       if (m.boardTitle)       lines.push(`     Missão: ${m.boardTitle}`)
+      if (m.preview)          lines.push(`     Mensagem: "${m.preview}"`)
+      if (m.fileName)         lines.push(`     Arquivo: ${m.fileName} (${m.fileType ?? ''} · ${m.sizeBytes ? Math.round(m.sizeBytes / 1024) + ' KB' : ''})`)
+      if (m.mentionId)        lines.push(`     Resposta a marcação`)
     }
     lines.push('')
   })

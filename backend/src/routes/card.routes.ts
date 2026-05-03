@@ -103,6 +103,22 @@ export async function cardRoutes(app: FastifyInstance) {
       },
     })
 
+    // Log card criado
+    await prisma.accessLog.create({
+      data: {
+        userId:    request.user.id,
+        action:    'CARD_CREATED',
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] as string,
+        metadata: JSON.parse(JSON.stringify({
+          cardId:      card.id,
+          cardTitle:   card.title,
+          boardId,
+          columnTitle: column.title,
+        })),
+      },
+    })
+
     return reply.status(201).send({ card })
   })
 
@@ -383,6 +399,23 @@ export async function cardRoutes(app: FastifyInstance) {
       })
       await enqueueNotification(NotificationType.CARD_MOVED, notification.id)
     }
+
+    // Log movimentação aceita
+    await prisma.accessLog.create({
+      data: {
+        userId:    request.user.id,
+        action:    'CARD_MOVED',
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] as string,
+        metadata: JSON.parse(JSON.stringify({
+          cardId:          id,
+          cardTitle:       card.title,
+          fromColumnTitle,
+          toColumnTitle:   targetColumn.title,
+          deadline:        new Date(deadline).toISOString(),
+        })),
+      },
+    })
 
     return reply.send({
       card: updatedCard,
