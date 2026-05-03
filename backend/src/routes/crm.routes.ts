@@ -576,10 +576,16 @@ export async function crmRoutes(app: FastifyInstance) {
     if (!lead) throw new AppError('Lead não encontrado', 404)
 
     const primary = lead.decisionMakers[0]
-    if (!primary) throw new AppError('Lead sem decisor cadastrado', 400)
+    if (!primary) throw new AppError('Lead sem decisor cadastrado. Adicione um decisor na aba Decisores.', 400)
+
+    const phone = primary.phonePersonal ?? primary.phoneCompany ?? lead.companyPhone
+    if (!phone) throw new AppError(
+      `Nenhum telefone encontrado. Preencha o telefone do decisor "${primary.name}" na aba Decisores.`,
+      400
+    )
 
     const msg = await crmAi.sendFirstMessage(lead, primary, products, skills)
-    if (!msg) throw new AppError('Não foi possível enviar — verifique se o decisor tem telefone cadastrado', 400)
+    if (!msg) throw new AppError('A IA não conseguiu gerar a mensagem. Verifique o ANTHROPIC_API_KEY no App Runner.', 500)
 
     // Salva como mensagem e no histórico
     await Promise.all([
