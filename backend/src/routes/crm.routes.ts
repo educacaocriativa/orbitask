@@ -31,11 +31,15 @@ const LEAD_INCLUDE = {
   },
 }
 
+function canCrm(user: { role: string; crmAccess?: boolean }) {
+  return user.role === 'ADMIN' || user.crmAccess === true
+}
+
 export async function crmRoutes(app: FastifyInstance) {
 
   // ── GET /crm/leads — kanban agrupado por etapa ────────────
   app.get('/crm/leads', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
 
     const leads = await prisma.crmLead.findMany({
       where: { isActive: true },
@@ -57,7 +61,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── GET /crm/leads/:id — detalhe completo ─────────────────
   app.get('/crm/leads/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
 
     const lead = await prisma.crmLead.findUnique({ where: { id }, include: LEAD_INCLUDE })
@@ -68,7 +72,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── POST /crm/leads — criar lead manualmente ──────────────
   app.post('/crm/leads', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
 
     const body = request.body as {
       companyName: string
@@ -109,7 +113,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── PATCH /crm/leads/:id — editar empresa ─────────────────
   app.patch('/crm/leads/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const body = request.body as { companyName?: string; companyPhone?: string; segment?: string }
 
@@ -128,7 +132,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── POST /crm/leads/:id/move — mover para outra etapa ─────
   app.post('/crm/leads/:id/move', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const { toStage, notes } = request.body as { toStage: CrmStage; notes?: string }
 
@@ -200,7 +204,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── DELETE /crm/leads/:id — arquivar lead ─────────────────
   app.delete('/crm/leads/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
 
     await prisma.crmLead.update({ where: { id }, data: { isActive: false } })
@@ -209,7 +213,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── POST /crm/leads/:id/decision-makers ───────────────────
   app.post('/crm/leads/:id/decision-makers', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const body = request.body as {
       name: string; role?: string; email?: string
@@ -232,7 +236,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── PATCH /crm/decision-makers/:id ────────────────────────
   app.patch('/crm/decision-makers/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const body = request.body as {
       name?: string; role?: string; email?: string
@@ -254,7 +258,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── DELETE /crm/decision-makers/:id ───────────────────────
   app.delete('/crm/decision-makers/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
 
     await prisma.crmDecisionMaker.delete({ where: { id } })
@@ -464,7 +468,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── GET /crm/ai/status — verifica se IA está configurada ─
   app.get('/crm/ai/status', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     return reply.send({
       configured:  crmAi.isConfigured,
       model:       'claude-opus-4-7',
@@ -478,7 +482,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── GET /crm/products ─────────────────────────────────
   app.get('/crm/products', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const products = await prisma.crmProduct.findMany({
       where:   { isActive: true },
       orderBy: { createdAt: 'asc' },
@@ -488,7 +492,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── POST /crm/products ────────────────────────────────
   app.post('/crm/products', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const body = request.body as {
       name: string; description?: string; price?: string
       videoUrl?: string; features?: string[]
@@ -509,7 +513,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── PATCH /crm/products/:id ───────────────────────────
   app.patch('/crm/products/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const body = request.body as {
       name?: string; description?: string; price?: string
@@ -530,7 +534,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── DELETE /crm/products/:id ──────────────────────────
   app.delete('/crm/products/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     await prisma.crmProduct.update({ where: { id }, data: { isActive: false } })
     return reply.send({ ok: true })
@@ -538,7 +542,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── POST /crm/leads/:id/products/:productId ───────────
   app.post('/crm/leads/:id/products/:productId', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id, productId } = request.params as { id: string; productId: string }
     const lp = await prisma.crmLeadProduct.upsert({
       where:  { leadId_productId: { leadId: id, productId } },
@@ -551,7 +555,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── DELETE /crm/leads/:id/products/:productId ─────────
   app.delete('/crm/leads/:id/products/:productId', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id, productId } = request.params as { id: string; productId: string }
     await prisma.crmLeadProduct.deleteMany({ where: { leadId: id, productId } })
     return reply.send({ ok: true })
@@ -562,13 +566,13 @@ export async function crmRoutes(app: FastifyInstance) {
   // ═══════════════════════════════════════════════════════
 
   app.get('/crm/skills', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const skills = await (prisma as any).crmSkill.findMany({ orderBy: { order: 'asc' } })
     return reply.send({ skills })
   })
 
   app.post('/crm/skills', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const body = request.body as { name: string; description?: string; content: string; trigger?: string }
     if (!body.name?.trim() || !body.content?.trim()) throw new AppError('Nome e conteúdo são obrigatórios', 400)
     const last = await (prisma as any).crmSkill.findFirst({ orderBy: { order: 'desc' } })
@@ -585,7 +589,7 @@ export async function crmRoutes(app: FastifyInstance) {
   })
 
   app.patch('/crm/skills/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const body = request.body as { name?: string; description?: string; content?: string; trigger?: string; isActive?: boolean; order?: number }
     const skill = await (prisma as any).crmSkill.update({
@@ -603,7 +607,7 @@ export async function crmRoutes(app: FastifyInstance) {
   })
 
   app.delete('/crm/skills/:id', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     await (prisma as any).crmSkill.delete({ where: { id } })
     return reply.send({ ok: true })
@@ -615,7 +619,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── POST /crm/apify/run — dispara ator Apify ──────────
   app.post('/crm/apify/run', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     if (!env.APIFY_API_TOKEN) throw new AppError('APIFY_API_TOKEN não configurado', 503)
     if (!env.APIFY_ACTOR_ID)  throw new AppError('APIFY_ACTOR_ID não configurado', 503)
 
@@ -640,7 +644,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
   // ── GET /crm/apify/run/:runId — status de um run ──────
   app.get('/crm/apify/run/:runId', { preHandler: [authenticate] }, async (request, reply) => {
-    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     if (!env.APIFY_API_TOKEN) throw new AppError('APIFY_API_TOKEN não configurado', 503)
 
     const { runId } = request.params as { runId: string }

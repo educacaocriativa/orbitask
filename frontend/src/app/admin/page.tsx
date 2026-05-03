@@ -658,6 +658,23 @@ export default function AdminPage() {
                     </motion.div>
                   ))}
                 </div>
+                {/* CRM Card */}
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+                  onClick={() => router.push('/admin/crm')}
+                  className="glass rounded-2xl p-5 border border-neon-violet/30 cursor-pointer hover:border-neon-violet/60 hover:bg-neon-violet/5 transition-all group"
+                  style={{ borderTopColor: '#7c3aed90' }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-display font-black tracking-[0.3em] text-neon-violet/70 uppercase mb-1">⚙ Mission Control</p>
+                      <h3 className="font-display text-lg font-black text-white">🎯 CRM — Pipeline de Vendas</h3>
+                      <p className="text-xs text-white/50 font-body mt-1">Gerencie leads, decisores e automação com IA</p>
+                    </div>
+                    <div className="text-3xl group-hover:scale-110 transition-transform">→</div>
+                  </div>
+                </motion.div>
+
                 <div className="glass rounded-2xl p-5 border border-white/14">
                   <h3 className="font-display text-sm font-black tracking-wider text-white mb-4">📡 Logins Recentes (24h)</h3>
                   {stats.recentLogins.length === 0 && <p className="text-sm text-white/50 font-body">Nenhum login nas últimas 24 horas</p>}

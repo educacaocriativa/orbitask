@@ -573,6 +573,148 @@ function AiConversation({ messages }: { messages: any }) {
 }
 
 // ── Product Modal ─────────────────────────────────────────
+// ── Products Manager Modal ────────────────────────────────
+function ProductsManagerModal({ onClose }: { onClose: () => void }) {
+  const [products, setProducts]   = useState<Product[]>([])
+  const [editing, setEditing]     = useState<Product | null>(null)
+  const [showForm, setShowForm]   = useState(false)
+
+  const load = useCallback(async () => {
+    const { data } = await api.get('/crm/products')
+    setProducts(data.products)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function handleDelete(id: string) {
+    await api.delete(`/crm/products/${id}`)
+    toast.success('Produto removido')
+    load()
+  }
+
+  if (showForm) {
+    return (
+      <ProductModal
+        editProduct={editing}
+        onClose={() => { setShowForm(false); setEditing(null) }}
+        onSaved={() => { setShowForm(false); setEditing(null); load() }}
+      />
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={onClose} className="absolute inset-0 bg-black/65 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.93, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.93 }} transition={{ type: 'spring', damping: 22, stiffness: 320 }}
+        className="relative w-full max-w-xl glass rounded-2xl shadow-glass flex flex-col max-h-[85vh]"
+      >
+        <div className="absolute -top-px left-6 right-6 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/8 shrink-0">
+          <div>
+            <h3 className="font-display text-base font-black tracking-wider text-white">📦 PRODUTOS</h3>
+            <p className="text-xs text-white/50 font-body mt-0.5">{products.length} produto(s) cadastrado(s)</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+              onClick={() => { setEditing(null); setShowForm(true) }}
+              className="px-3 py-2 rounded-xl text-xs font-display font-black text-white"
+              style={{ background: 'linear-gradient(135deg,#d97706,#f59e0b)' }}>
+              + Novo Produto
+            </motion.button>
+            <button onClick={onClose} className="text-white/40 hover:text-white text-xl">✕</button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-3 scrollbar-space">
+          {products.length === 0 ? (
+            <div className="text-center py-10 text-white/30">
+              <p className="text-4xl mb-3">📦</p>
+              <p className="text-sm font-body">Nenhum produto cadastrado.</p>
+            </div>
+          ) : products.map(p => (
+            <div key={p.id} className="flex items-start justify-between gap-3 p-4 rounded-xl bg-white/4 border border-white/10">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-display font-bold text-white">{p.name}</p>
+                {p.price && <p className="text-xs text-amber-400 font-body mt-0.5">💰 {p.price}</p>}
+                {p.description && <p className="text-xs text-white/50 font-body mt-1 line-clamp-2">{p.description}</p>}
+                {p.videoUrl && <p className="text-[11px] text-neon-violet/70 font-body mt-1 truncate">🎥 {p.videoUrl}</p>}
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button onClick={() => { setEditing(p); setShowForm(true) }}
+                  className="text-xs px-2 py-1 rounded-lg border border-white/15 text-white/50 hover:bg-white/5 transition-all">✏️</button>
+                <button onClick={() => handleDelete(p.id)}
+                  className="text-xs px-2 py-1 rounded-lg border border-red-500/30 text-red-400/60 hover:bg-red-500/10 transition-all">🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
+// ── CRM Access Modal ──────────────────────────────────────
+function CrmAccessModal({ onClose }: { onClose: () => void }) {
+  const [users, setUsers] = useState<{ id: string; name: string; email: string; role: string; crmAccess: boolean }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.get('/admin/users?limit=100').then(({ data }) => {
+      setUsers(data.users ?? data.data ?? [])
+      setLoading(false)
+    })
+  }, [])
+
+  async function toggle(id: string, current: boolean) {
+    await api.patch(`/admin/users/${id}/crm-access`, { crmAccess: !current })
+    setUsers(u => u.map(x => x.id === id ? { ...x, crmAccess: !current } : x))
+    toast.success(!current ? 'Acesso CRM liberado ✅' : 'Acesso CRM removido')
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        onClick={onClose} className="absolute inset-0 bg-black/65 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.93, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.93 }} transition={{ type: 'spring', damping: 22, stiffness: 320 }}
+        className="relative w-full max-w-lg glass rounded-2xl shadow-glass flex flex-col max-h-[80vh]"
+      >
+        <div className="absolute -top-px left-6 right-6 h-px bg-gradient-to-r from-transparent via-neon-cyan/60 to-transparent" />
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/8 shrink-0">
+          <div>
+            <h3 className="font-display text-base font-black tracking-wider text-white">👥 ACESSO AO CRM</h3>
+            <p className="text-xs text-white/50 font-body mt-0.5">ADMINs sempre têm acesso. Libere para membros abaixo.</p>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white text-xl">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-2 scrollbar-space">
+          {loading ? (
+            <div className="text-center py-10 text-white/30">Carregando...</div>
+          ) : users.filter(u => u.role !== 'ADMIN').map(u => (
+            <div key={u.id} className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-white/4 border border-white/10">
+              <div className="min-w-0">
+                <p className="text-sm font-body font-semibold text-white truncate">{u.name}</p>
+                <p className="text-xs text-white/45 font-body truncate">{u.email}</p>
+              </div>
+              <button onClick={() => toggle(u.id, u.crmAccess)}
+                className={`shrink-0 text-xs px-3 py-1.5 rounded-xl border font-display font-black transition-all ${
+                  u.crmAccess
+                    ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20'
+                    : 'border-white/15 text-white/40 hover:bg-white/5'
+                }`}>
+                {u.crmAccess ? '✓ Com acesso' : 'Liberar'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+    </div>
+  )
+}
+
 function ProductModal({ onClose, onSaved, editProduct }: {
   onClose: () => void; onSaved: () => void; editProduct?: Product | null
 }) {
@@ -982,7 +1124,9 @@ export default function CrmPage() {
   const [showNewLead, setShowNewLead]   = useState(false)
   const [showProduct, setShowProduct]   = useState(false)
   const [editProduct, setEditProduct]   = useState<Product | null>(null)
-  const [showSkills, setShowSkills]     = useState(false)
+  const [showSkills, setShowSkills]         = useState(false)
+  const [showProducts, setShowProducts]     = useState(false)
+  const [showCrmAccess, setShowCrmAccess]   = useState(false)
   useEffect(() => {
     if (user && user.role !== 'ADMIN') { router.replace('/board'); return }
   }, [user, router])
@@ -1031,14 +1175,19 @@ export default function CrmPage() {
             <div className="flex items-center gap-3">
               <span className="text-sm text-white/55 font-body font-semibold">{total} lead{total !== 1 ? 's' : ''}</span>
               <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                onClick={() => setShowCrmAccess(true)}
+                className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-display font-black border border-neon-cyan/40 text-neon-cyan/80 hover:bg-neon-cyan/8 transition-all">
+                👥 Acesso
+              </motion.button>
+              <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowSkills(true)}
                 className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-display font-black border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/12 transition-all">
                 🧠 Skills
               </motion.button>
               <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                onClick={() => { setEditProduct(null); setShowProduct(true) }}
+                onClick={() => setShowProducts(true)}
                 className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-display font-black border border-amber-500/40 text-amber-300 hover:bg-amber-500/12 transition-all">
-                📦 Cadastrar Produto
+                📦 Produtos
               </motion.button>
               <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowNewLead(true)}
@@ -1118,6 +1267,12 @@ export default function CrmPage() {
         )}
         {showSkills && (
           <SkillsModal onClose={() => setShowSkills(false)} />
+        )}
+        {showProducts && (
+          <ProductsManagerModal onClose={() => setShowProducts(false)} />
+        )}
+        {showCrmAccess && (
+          <CrmAccessModal onClose={() => setShowCrmAccess(false)} />
         )}
       </AnimatePresence>
     </div>

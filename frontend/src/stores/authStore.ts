@@ -11,6 +11,7 @@ export interface AuthUser {
   role: 'ADMIN' | 'MEMBER' | 'GUEST'
   avatarUrl?: string
   phoneWhatsapp?: string
+  crmAccess?: boolean
 }
 
 interface AuthState {

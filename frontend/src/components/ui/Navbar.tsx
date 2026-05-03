@@ -131,6 +131,21 @@ export function Navbar() {
             </button>
           )}
 
+          {/* CRM badge — admin ou usuário com acesso */}
+          {(user?.role === 'ADMIN' || user?.crmAccess) && (
+            <Link
+              href="/admin/crm"
+              className={cn(
+                'hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg',
+                'font-display tracking-wider text-emerald-400/80',
+                'border border-emerald-500/20 hover:border-emerald-500/45',
+                'hover:bg-emerald-500/5 transition-all duration-200',
+              )}
+            >
+              🎯 CRM
+            </Link>
+          )}
+
           {/* Admin badge */}
           {user?.role === 'ADMIN' && (
             <Link

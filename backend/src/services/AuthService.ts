@@ -75,10 +75,11 @@ export class AuthService {
     // Generate JWT
     const token = this.app.jwt.sign(
       {
-        sub: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
+        sub:       user.id,
+        name:      user.name,
+        email:     user.email,
+        role:      user.role,
+        crmAccess: (user as any).crmAccess ?? false,
       },
       { expiresIn: env.JWT_EXPIRES_IN }
     )
@@ -102,12 +103,13 @@ export class AuthService {
     return {
       token,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatarUrl: user.avatarUrl,
+        id:            user.id,
+        name:          user.name,
+        email:         user.email,
+        role:          user.role,
+        avatarUrl:     user.avatarUrl,
         phoneWhatsapp: user.phoneWhatsapp,
+        crmAccess:     (user as any).crmAccess ?? false,
       },
     }
   }
@@ -135,7 +137,8 @@ export class AuthService {
         phoneWhatsapp: true,
         lastAccessAt: true,
         createdAt: true,
-      },
+        crmAccess: true,
+      } as any,
     })
 
     if (!user) throw new AppError('User not found', 404)

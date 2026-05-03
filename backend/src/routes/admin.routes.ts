@@ -113,6 +113,20 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send(result)
   })
 
+  // ── PATCH /admin/users/:id/crm-access ───────────────────
+  app.patch('/admin/users/:id/crm-access', {
+    preHandler: [isAdmin],
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { crmAccess } = request.body as { crmAccess: boolean }
+    const user = await prisma.user.update({
+      where: { id },
+      data: { crmAccess } as any,
+      select: { id: true, name: true, email: true, role: true, crmAccess: true } as any,
+    })
+    return reply.send({ user })
+  })
+
   // ── PATCH /admin/users/:id/password ─────────────────────
   app.patch('/admin/users/:id/password', {
     preHandler: [isAdmin],

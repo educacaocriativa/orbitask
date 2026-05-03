@@ -106,6 +106,7 @@ async function ensureCrmTables() {
       INDEX crm_leads_stage_position_idx (stage, position)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
     [`crm_leads.segment (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS segment VARCHAR(191) NULL`],
+    [`users.crm_access (migration)`, `ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_access TINYINT(1) NOT NULL DEFAULT 0`],
     [`crm_decision_makers`, `CREATE TABLE IF NOT EXISTS crm_decision_makers (
       id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
       name VARCHAR(191) NOT NULL, role VARCHAR(191), email VARCHAR(191),
