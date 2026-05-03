@@ -49,7 +49,7 @@ interface StageHistory {
 const SEGMENTS = ['Editora', 'Escola', 'Varejo', 'Indústria', 'Tecnologia', 'Saúde', 'Outro']
 
 interface Lead {
-  id: string; companyName: string; companyPhone?: string; segment?: string
+  id: string; companyName: string; companyPhone?: string; companyWebsite?: string; segment?: string
   stage: CrmStage; position: number
   decisionMakers: DecisionMaker[]
   stageHistory: StageHistory[]
@@ -245,15 +245,17 @@ function LeadModal({ leadId, onClose, onUpdated }: {
   const [moveNotes, setMoveNotes] = useState('')
   const [moving, setMoving] = useState(false)
   const [editingCompany, setEditingCompany] = useState(false)
-  const [companyName, setCompanyName] = useState('')
-  const [companyPhone, setCompanyPhone] = useState('')
-  const [segment, setSegment] = useState('')
+  const [companyName, setCompanyName]       = useState('')
+  const [companyPhone, setCompanyPhone]     = useState('')
+  const [companyWebsite, setCompanyWebsite] = useState('')
+  const [segment, setSegment]               = useState('')
 
   const reload = useCallback(async () => {
     const { data } = await api.get(`/crm/leads/${leadId}`)
     setLead(data.lead)
     setCompanyName(data.lead.companyName)
     setCompanyPhone(data.lead.companyPhone ?? '')
+    setCompanyWebsite(data.lead.companyWebsite ?? '')
     setSegment(data.lead.segment ?? '')
   }, [leadId])
 
@@ -295,7 +297,7 @@ function LeadModal({ leadId, onClose, onUpdated }: {
 
   async function handleSaveCompany() {
     try {
-      await api.patch(`/crm/leads/${leadId}`, { companyName, companyPhone: companyPhone || null, segment: segment || null })
+      await api.patch(`/crm/leads/${leadId}`, { companyName, companyPhone: companyPhone || null, companyWebsite: companyWebsite || null, segment: segment || null })
       await reload(); onUpdated()
       setEditingCompany(false)
       toast.success('Atualizado ✅')
@@ -354,7 +356,9 @@ function LeadModal({ leadId, onClose, onUpdated }: {
                   <input value={companyName} onChange={(e) => setCompanyName(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-xl text-sm font-display font-bold input-space" />
                   <input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)}
-                    placeholder="Telefone empresa (+55...)" className="w-full px-3 py-1.5 rounded-xl text-sm font-body input-space" />
+                    placeholder="Telefone / WhatsApp (+55...)" className="w-full px-3 py-1.5 rounded-xl text-sm font-body input-space" />
+                  <input value={companyWebsite} onChange={(e) => setCompanyWebsite(e.target.value)}
+                    placeholder="Site (https://...)" className="w-full px-3 py-1.5 rounded-xl text-sm font-body input-space" />
                   <select value={segment} onChange={(e) => setSegment(e.target.value)}
                     className="w-full px-3 py-1.5 rounded-xl text-sm font-body input-space">
                     <option value="">Segmento...</option>
@@ -445,7 +449,17 @@ function LeadModal({ leadId, onClose, onUpdated }: {
           {tab === 'info' && (
             <div className="space-y-3">
               <InfoRow label="Empresa" value={lead.companyName} />
-              <InfoRow label="Telefone da Empresa" value={lead.companyPhone} phone />
+              <InfoRow label="Telefone de Contato" value={lead.companyPhone} phone />
+              {lead.companyWebsite && (
+                <div className="flex items-center justify-between py-1.5 border-b border-white/6">
+                  <span className="text-xs text-white/45 font-body font-semibold w-32 shrink-0">Site</span>
+                  <a href={lead.companyWebsite} target="_blank" rel="noopener noreferrer"
+                    className="text-sm text-neon-violet/80 hover:text-neon-violet font-body truncate transition-colors"
+                    title={lead.companyWebsite}>
+                    🌐 {lead.companyWebsite.replace(/^https?:\/\//, '').split('/')[0]}
+                  </a>
+                </div>
+              )}
               <InfoRow label="Segmento" value={lead.segment} />
               <InfoRow label="Criado em" value={new Date(lead.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} />
               <InfoRow label="Etapa atual" value={`${cfg.emoji} ${cfg.label}`} />

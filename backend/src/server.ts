@@ -107,6 +107,7 @@ async function ensureCrmTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
     [`crm_leads.segment (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS segment VARCHAR(191) NULL`],
     [`users.crm_access (migration)`, `ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_access TINYINT(1) NOT NULL DEFAULT 0`],
+    [`crm_leads.company_website (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS company_website TEXT NULL`],
     [`crm_messages`, `CREATE TABLE IF NOT EXISTS crm_messages (
       id VARCHAR(191) NOT NULL PRIMARY KEY,
       lead_id VARCHAR(191) NOT NULL,

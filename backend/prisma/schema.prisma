@@ -470,6 +470,7 @@ model CrmLead {
   id             String    @id @default(uuid())
   companyName    String    @map("company_name")
   companyPhone   String?   @map("company_phone")
+  companyWebsite String?   @map("company_website") @db.Text
   segment        String?
   stage          CrmStage  @default(LEAD)
   position       Int       @default(0)
