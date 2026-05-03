@@ -228,9 +228,8 @@ REGRAS OBRIGATÓRIAS para esta primeira mensagem:
 
     try {
       const response = await this.client.messages.create({
-        model:      'claude-opus-4-7',
-        max_tokens: 4096,
-        thinking:   { type: 'adaptive' },
+        model:      'claude-sonnet-4-6',
+        max_tokens: 2048,
         system: [{
           type:          'text',
           text:          buildSystemPrompt(products, skills),
@@ -278,9 +277,8 @@ REGRAS OBRIGATÓRIAS para esta primeira mensagem:
 
     try {
       const response = await this.client.messages.create({
-        model:      'claude-opus-4-7',
+        model:      'claude-sonnet-4-6',
         max_tokens: 2048,
-        thinking:   { type: 'adaptive' },
         system: [{
           type:          'text',
           text:          buildSystemPrompt(products, skills),
