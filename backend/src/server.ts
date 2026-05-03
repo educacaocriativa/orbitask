@@ -107,6 +107,19 @@ async function ensureCrmTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
     [`crm_leads.segment (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS segment VARCHAR(191) NULL`],
     [`users.crm_access (migration)`, `ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_access TINYINT(1) NOT NULL DEFAULT 0`],
+    [`crm_messages`, `CREATE TABLE IF NOT EXISTS crm_messages (
+      id VARCHAR(191) NOT NULL PRIMARY KEY,
+      lead_id VARCHAR(191) NOT NULL,
+      direction VARCHAR(16) NOT NULL,
+      content LONGTEXT NOT NULL,
+      sent_by VARCHAR(16),
+      sender_name VARCHAR(191),
+      sent_by_user_id VARCHAR(191),
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      INDEX crm_messages_lead_idx (lead_id, created_at),
+      FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE,
+      FOREIGN KEY (sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
     [`crm_decision_makers`, `CREATE TABLE IF NOT EXISTS crm_decision_makers (
       id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
       name VARCHAR(191) NOT NULL, role VARCHAR(191), email VARCHAR(191),

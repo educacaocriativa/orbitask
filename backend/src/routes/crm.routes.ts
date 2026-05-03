@@ -180,6 +180,9 @@ export async function crmRoutes(app: FastifyInstance) {
           if (!primary) return
           const msg = await crmAi.sendFirstMessage(fullLead, primary, products, skills)
           if (msg) {
+            await (prisma as any).crmMessage?.create({
+              data: { leadId: id, direction: 'OUTBOUND', content: msg, sentBy: 'AI', senderName: 'IA Comercial' },
+            })
             await prisma.crmStageHistory.create({
               data: {
                 leadId:        id,
@@ -355,6 +358,9 @@ export async function crmRoutes(app: FastifyInstance) {
 
     if (!rawPhone || !messageText.trim()) return reply.send({ ok: true })
 
+    // Salva mensagem recebida (independente de ter lead associado)
+    let inboundLeadId: string | null = null
+
     // Busca o lead pelo telefone do decisor
     const decisionMaker = await prisma.crmDecisionMaker.findFirst({
       where: {
@@ -377,6 +383,17 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     const lead = decisionMaker.lead
+    inboundLeadId = lead.id
+
+    // Salva mensagem recebida
+    await (prisma as any).crmMessage?.create({
+      data: {
+        leadId:     lead.id,
+        direction:  'INBOUND',
+        content:    messageText,
+        senderName: decisionMaker.name,
+      },
+    })
 
     // Busca histórico de conversas IA para este lead
     const historyEntries = await prisma.crmStageHistory.findMany({
@@ -413,6 +430,17 @@ export async function crmRoutes(app: FastifyInstance) {
     const whatsapp = new WhatsAppService()
     const phone = decisionMaker.phonePersonal ?? decisionMaker.phoneCompany ?? ''
     await whatsapp.sendMessage({ phone, message: aiReply })
+
+    // Salva mensagem enviada pela IA
+    await (prisma as any).crmMessage?.create({
+      data: {
+        leadId:    lead.id,
+        direction: 'OUTBOUND',
+        content:   aiReply,
+        sentBy:    'AI',
+        senderName: 'IA Comercial',
+      },
+    })
 
     // Se IA recomendou um produto, associa ao lead automaticamente
     if (recommendedProductId) {
@@ -464,6 +492,59 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     return reply.send({ ok: true })
+  })
+
+  // ═══════════════════════════════════════════════════════
+  //  MENSAGENS
+  // ═══════════════════════════════════════════════════════
+
+  // ── GET /crm/leads/:id/messages ──────────────────────────
+  app.get('/crm/leads/:id/messages', { preHandler: [authenticate] }, async (request, reply) => {
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
+    const { id } = request.params as { id: string }
+    const messages = await (prisma as any).crmMessage.findMany({
+      where:   { leadId: id },
+      orderBy: { createdAt: 'asc' },
+    })
+    return reply.send({ messages })
+  })
+
+  // ── POST /crm/leads/:id/messages — envio manual ──────────
+  app.post('/crm/leads/:id/messages', { preHandler: [authenticate] }, async (request, reply) => {
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
+    const { id } = request.params as { id: string }
+    const { content } = request.body as { content: string }
+
+    if (!content?.trim()) throw new AppError('Mensagem não pode estar vazia', 400)
+
+    const lead = await prisma.crmLead.findUnique({
+      where:   { id },
+      include: { decisionMakers: { orderBy: { isPrimary: 'desc' } } },
+    })
+    if (!lead) throw new AppError('Lead não encontrado', 404)
+
+    const primary = lead.decisionMakers[0]
+    const phone   = primary?.phonePersonal ?? primary?.phoneCompany
+    if (!phone) throw new AppError('Lead sem número de WhatsApp cadastrado', 400)
+
+    // Envia via WhatsApp
+    const { WhatsAppService } = await import('../services/WhatsAppService')
+    const whatsapp = new WhatsAppService()
+    await whatsapp.sendMessage({ phone, message: content.trim() })
+
+    // Salva mensagem
+    const message = await (prisma as any).crmMessage.create({
+      data: {
+        leadId:      id,
+        direction:   'OUTBOUND',
+        content:     content.trim(),
+        sentBy:      'HUMAN',
+        senderName:  request.user.name,
+        sentByUserId: request.user.id,
+      },
+    })
+
+    return reply.status(201).send({ message })
   })
 
   // ── GET /crm/ai/status — verifica se IA está configurada ─

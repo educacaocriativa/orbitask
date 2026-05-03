@@ -482,12 +482,31 @@ model CrmLead {
   decisionMakers CrmDecisionMaker[]
   stageHistory   CrmStageHistory[]
   leadProducts   CrmLeadProduct[]
+  messages       CrmMessage[]
 
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@index([stage, position])
   @@map("crm_leads")
+}
+
+model CrmMessage {
+  id           String   @id @default(uuid())
+  leadId       String   @map("lead_id")
+  lead         CrmLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  direction    String               // 'INBOUND' | 'OUTBOUND'
+  content      String   @db.Text
+  sentBy       String?  @map("sent_by")  // 'AI' | 'HUMAN' | null (inbound)
+  senderName   String?  @map("sender_name")
+  sentByUserId String?  @map("sent_by_user_id")
+  sentByUser   User?    @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
+
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([leadId, createdAt])
+  @@map("crm_messages")
 }
 
 model CrmDecisionMaker {

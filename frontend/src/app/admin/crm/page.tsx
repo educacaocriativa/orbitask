@@ -32,6 +32,14 @@ interface DecisionMaker {
   id: string; name: string; role?: string; email?: string
   phoneCompany?: string; phonePersonal?: string; linkedin?: string; isPrimary: boolean
 }
+interface CrmMessage {
+  id: string; leadId: string
+  direction: 'INBOUND' | 'OUTBOUND'
+  content: string
+  sentBy?: 'AI' | 'HUMAN' | null
+  senderName?: string
+  createdAt: string
+}
 interface StageHistory {
   id: string; fromStage?: CrmStage; toStage: CrmStage
   notes?: string; isAiMove: boolean; createdAt: string
@@ -227,7 +235,10 @@ function LeadModal({ leadId, onClose, onUpdated }: {
   leadId: string; onClose: () => void; onUpdated: () => void
 }) {
   const [lead, setLead] = useState<Lead | null>(null)
-  const [tab, setTab] = useState<'info' | 'decisores' | 'historico'>('info')
+  const [tab, setTab] = useState<'info' | 'decisores' | 'historico' | 'mensagens'>('info')
+  const [messages, setMessages]     = useState<CrmMessage[]>([])
+  const [msgInput, setMsgInput]     = useState('')
+  const [sendingMsg, setSendingMsg] = useState(false)
   const [addingDm, setAddingDm] = useState(false)
   const [editingDmId, setEditingDmId] = useState<string | null>(null)
   const [movingStage, setMovingStage] = useState<CrmStage | null>(null)
@@ -247,6 +258,27 @@ function LeadModal({ leadId, onClose, onUpdated }: {
   }, [leadId])
 
   useEffect(() => { reload() }, [reload])
+
+  const loadMessages = useCallback(async () => {
+    const { data } = await api.get(`/crm/leads/${leadId}/messages`)
+    setMessages(data.messages)
+  }, [leadId])
+
+  useEffect(() => {
+    if (tab === 'mensagens') loadMessages()
+  }, [tab, loadMessages])
+
+  async function sendMessage() {
+    if (!msgInput.trim()) return
+    setSendingMsg(true)
+    try {
+      await api.post(`/crm/leads/${leadId}/messages`, { content: msgInput.trim() })
+      setMsgInput('')
+      loadMessages()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao enviar mensagem')
+    } finally { setSendingMsg(false) }
+  }
 
   async function handleMove() {
     if (!movingStage) return
@@ -361,12 +393,17 @@ function LeadModal({ leadId, onClose, onUpdated }: {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-1">
-            {(['info', 'decisores', 'historico'] as const).map((t) => (
-              <button key={t} onClick={() => setTab(t)}
-                className={cn('px-3 py-1.5 rounded-lg text-xs font-display font-black tracking-wide transition-all capitalize',
-                  tab === t ? 'bg-neon-violet/35 text-white border border-neon-violet/55' : 'text-white/50 hover:text-white')}>
-                {t === 'info' ? '🏢 Empresa' : t === 'decisores' ? '👥 Decisores' : '📋 Histórico'}
+          <div className="flex gap-1 flex-wrap">
+            {([
+              { id: 'info',      label: '🏢 Empresa' },
+              { id: 'decisores', label: '👥 Decisores' },
+              { id: 'mensagens', label: '💬 Mensagens' },
+              { id: 'historico', label: '📋 Histórico' },
+            ] as const).map((t) => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={cn('px-3 py-1.5 rounded-lg text-xs font-display font-black tracking-wide transition-all',
+                  tab === t.id ? 'bg-neon-violet/35 text-white border border-neon-violet/55' : 'text-white/50 hover:text-white')}>
+                {t.label}
               </button>
             ))}
           </div>
@@ -472,6 +509,67 @@ function LeadModal({ leadId, onClose, onUpdated }: {
           )}
 
           {/* ── Tab: Histórico ── */}
+          {/* ── Tab: Mensagens ── */}
+          {tab === 'mensagens' && (
+            <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
+              {/* Lista de mensagens */}
+              <div className="flex-1 overflow-y-auto space-y-3 mb-3 pr-1 scrollbar-space">
+                {messages.length === 0 ? (
+                  <div className="text-center py-10 text-white/30">
+                    <p className="text-3xl mb-2">💬</p>
+                    <p className="text-sm font-body">Nenhuma mensagem ainda.</p>
+                    <p className="text-xs font-body mt-1">Mensagens trocadas via WhatsApp aparecem aqui.</p>
+                  </div>
+                ) : messages.map((msg) => {
+                  const isOut = msg.direction === 'OUTBOUND'
+                  return (
+                    <div key={msg.id} className={`flex flex-col ${isOut ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm font-body leading-relaxed ${
+                        isOut
+                          ? msg.sentBy === 'AI'
+                            ? 'bg-neon-violet/25 border border-neon-violet/40 text-white rounded-tr-sm'
+                            : 'bg-emerald-600/25 border border-emerald-500/40 text-white rounded-tr-sm'
+                          : 'bg-white/10 border border-white/15 text-white/90 rounded-tl-sm'
+                      }`}>
+                        {msg.content}
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-0.5 px-1">
+                        <span className="text-[10px] text-white/30 font-body">
+                          {new Date(msg.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                        </span>
+                        {msg.senderName && (
+                          <span className="text-[10px] text-white/40 font-body">
+                            · {msg.sentBy === 'AI' ? '🤖' : msg.direction === 'INBOUND' ? '📱' : '👤'} {msg.senderName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Campo de envio manual */}
+              <div className="flex gap-2 pt-3 border-t border-white/8 shrink-0">
+                <input
+                  value={msgInput}
+                  onChange={(e) => setMsgInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                  placeholder="Digite uma mensagem para enviar via WhatsApp..."
+                  className="flex-1 px-3 py-2 rounded-xl text-sm font-body input-space"
+                />
+                <motion.button
+                  whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                  onClick={sendMessage}
+                  disabled={sendingMsg || !msgInput.trim()}
+                  className="px-4 py-2 rounded-xl text-sm font-display font-black text-white disabled:opacity-40 shrink-0"
+                  style={{ background: 'linear-gradient(135deg,#059669,#06b6d4)' }}
+                >
+                  {sendingMsg ? '⏳' : '➤'}
+                </motion.button>
+              </div>
+            </div>
+          )}
+
           {tab === 'historico' && (
             <div className="space-y-3">
               {lead.stageHistory.length === 0 && (
