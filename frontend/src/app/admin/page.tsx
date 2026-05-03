@@ -69,9 +69,52 @@ function formatBytes(bytes: number) {
 }
 
 // ── Log detail modal ─────────────────────────────────────
+function formatActivityTxt(user: { name: string; email: string }, logs: any[]): string {
+  const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+  const sep = '═'.repeat(60)
+  const lines: string[] = [
+    sep,
+    `RELATÓRIO DE ATIVIDADES — ${user.name}`,
+    `E-mail: ${user.email}`,
+    `Gerado em: ${now} (Horário de Brasília)`,
+    `Total de registros: ${logs.length}`,
+    sep,
+    '',
+  ]
+
+  logs.forEach((log: any, i: number) => {
+    const num = String(i + 1).padStart(3, '0')
+    const dt = new Date(log.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    const { label } = actionLabel(log.action)
+    lines.push(`[${num}] ${dt}`)
+    lines.push(`     Ação: ${label}`)
+    if (log.ipAddress)  lines.push(`     IP: ${log.ipAddress}`)
+    if (log.userAgent)  lines.push(`     Dispositivo: ${log.userAgent.substring(0, 120)}`)
+
+    const m = log.metadata as Record<string, any> | null
+    if (m) {
+      if (m.cardTitle)        lines.push(`     Card: "${m.cardTitle}"`)
+      if (m.fromColumnTitle)  lines.push(`     De: ${m.fromColumnTitle}`)
+      if (m.toColumn)         lines.push(`     Para: ${m.toColumn}`)
+      if (m.reason === 'already_moved') lines.push(`     Motivo: já havia movido este card`)
+      if (m.reason === 'not_column_member') lines.push(`     Motivo: não é membro da etapa de origem`)
+      if (m.movedBy)          lines.push(`     Movido por: ${m.movedBy}`)
+      if (m.deadline)         lines.push(`     Prazo definido: ${new Date(m.deadline).toLocaleString('pt-BR')}`)
+      if (m.boardTitle)       lines.push(`     Missão: ${m.boardTitle}`)
+    }
+    lines.push('')
+  })
+
+  lines.push(sep)
+  lines.push('Fim do relatório')
+  lines.push(sep)
+  return lines.join('\n')
+}
+
 function LogDetailModal({ log, onClose }: { log: Log | null; onClose: () => void }) {
   const [files, setFiles] = useState<UserFile[]>([])
   const [loadingFiles, setLoadingFiles] = useState(false)
+  const [downloadingReport, setDownloadingReport] = useState(false)
 
   useEffect(() => {
     if (!log) return
@@ -81,6 +124,27 @@ function LogDetailModal({ log, onClose }: { log: Log | null; onClose: () => void
       .catch(() => {})
       .finally(() => setLoadingFiles(false))
   }, [log?.user.id])
+
+  async function downloadReport() {
+    if (!log) return
+    setDownloadingReport(true)
+    try {
+      const { data } = await api.get(`/admin/users/${log.user.id}/activity`)
+      const content = formatActivityTxt(data.user, data.logs)
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const safeName = log.user.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()
+      a.href = url
+      a.download = `relatorio_${safeName}_${new Date().toISOString().slice(0, 10)}.txt`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Erro ao gerar relatório')
+    } finally {
+      setDownloadingReport(false)
+    }
+  }
 
   const { label, color } = log ? actionLabel(log.action) : { label: '', color: '' }
 
@@ -106,7 +170,16 @@ function LogDetailModal({ log, onClose }: { log: Log | null; onClose: () => void
                   <div className="text-xs text-white/50 font-body">{log.user.email}</div>
                 </div>
               </div>
-              <button onClick={onClose} className="text-white/40 hover:text-white text-xl transition-colors">✕</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={downloadReport}
+                  disabled={downloadingReport}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-body font-bold border border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/12 disabled:opacity-50 transition-all"
+                >
+                  {downloadingReport ? '⏳ Gerando...' : '📄 Baixar Relatório TXT'}
+                </button>
+                <button onClick={onClose} className="text-white/40 hover:text-white text-xl transition-colors">✕</button>
+              </div>
             </div>
 
             {/* Action */}

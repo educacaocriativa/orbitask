@@ -152,6 +152,35 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send(result)
   })
 
+  // ── GET /admin/users/:id/activity ───────────────────────
+  // Retorna todos os logs do usuário para geração de relatório TXT
+  app.get('/admin/users/:id/activity', {
+    preHandler: [isAdmin],
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, name: true, email: true },
+    })
+    if (!user) throw new AppError('Usuário não encontrado', 404)
+
+    const logs = await prisma.accessLog.findMany({
+      where: { userId: id },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        action: true,
+        ipAddress: true,
+        userAgent: true,
+        metadata: true,
+        createdAt: true,
+      },
+    })
+
+    return reply.send({ user, logs })
+  })
+
   // ── GET /admin/users/:id/files ──────────────────────────
   app.get('/admin/users/:id/files', {
     preHandler: [isAdmin],
