@@ -19,7 +19,7 @@ export const CRM_STAGES: CrmStage[] = [
 ]
 
 const LEAD_INCLUDE = {
-  decisionMakers: { orderBy: { isPrimary: 'desc' as const, createdAt: 'asc' as const } },
+  decisionMakers: { orderBy: [{ isPrimary: 'desc' as const }, { createdAt: 'asc' as const }] },
   stageHistory: {
     orderBy: { createdAt: 'desc' as const },
     take: 50,
@@ -41,7 +41,7 @@ export async function crmRoutes(app: FastifyInstance) {
       where: { isActive: true },
       orderBy: [{ stage: 'asc' }, { position: 'asc' }, { createdAt: 'desc' }],
       include: {
-        decisionMakers: { orderBy: { isPrimary: 'desc', createdAt: 'asc' } },
+        decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
         _count: { select: { stageHistory: true } },
       },
     })
