@@ -91,6 +91,23 @@ export async function announcementRoutes(app: FastifyInstance) {
       }
     })
 
+    // Log comunicado criado
+    await prisma.accessLog.create({
+      data: {
+        userId:    request.user.id,
+        action:    'ANNOUNCEMENT_CREATED',
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] as string,
+        metadata: JSON.parse(JSON.stringify({
+          announcementId: announcement.id,
+          title,
+          content:    content.slice(0, 300),
+          targetType,
+          targetId:   targetId ?? null,
+        })),
+      },
+    })
+
     return reply.status(201).send({ announcement })
   })
 
@@ -181,6 +198,21 @@ export async function announcementRoutes(app: FastifyInstance) {
     const reply_ = await prisma.announcementReply.create({
       data: { announcementId: id, authorId: request.user.id, content: content.trim() },
       include: { author: { select: { id: true, name: true, avatarUrl: true, role: true } } },
+    })
+
+    // Log resposta ao comunicado
+    await prisma.accessLog.create({
+      data: {
+        userId:    request.user.id,
+        action:    'ANNOUNCEMENT_REPLIED',
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] as string,
+        metadata: JSON.parse(JSON.stringify({
+          announcementId:    id,
+          announcementTitle: announcement.title,
+          content:           content.trim().slice(0, 300),
+        })),
+      },
     })
 
     return reply.status(201).send({ reply: reply_ })

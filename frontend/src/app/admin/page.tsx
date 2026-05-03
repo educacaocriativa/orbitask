@@ -55,7 +55,9 @@ function actionLabel(action: string): { label: string; color: string } {
   if (action === 'CARD_RESTORED')   return { label: '♻️ Restaurou um card',           color: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/25' }
   if (action === 'SECTION_SAVED')   return { label: '💬 Enviou mensagem/comentário', color: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/25' }
   if (action === 'FILE_UPLOADED')   return { label: '📎 Enviou um arquivo',           color: 'text-teal-300 bg-teal-500/10 border-teal-500/25' }
-  if (action === 'MENTION_REPLIED') return { label: '↩️ Respondeu uma marcação',     color: 'text-pink-300 bg-pink-500/10 border-pink-500/25' }
+  if (action === 'MENTION_REPLIED')       return { label: '↩️ Respondeu uma marcação',  color: 'text-pink-300 bg-pink-500/10 border-pink-500/25' }
+  if (action === 'ANNOUNCEMENT_CREATED')  return { label: '📢 Criou um comunicado',      color: 'text-yellow-300 bg-yellow-500/10 border-yellow-500/25' }
+  if (action === 'ANNOUNCEMENT_REPLIED')  return { label: '💬 Respondeu um comunicado', color: 'text-yellow-200 bg-yellow-500/8 border-yellow-500/20' }
   if (action.startsWith('POST:/boards') && action.includes('/cards')) return { label: '✨ Criou um card',      color: 'text-violet-300 bg-violet-500/10 border-violet-500/25' }
   if (action.startsWith('POST:/boards'))   return { label: '🛸 Criou uma missão',     color: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/22' }
   if (action.startsWith('PATCH:/columns')) return { label: '⚙️ Editou uma etapa',    color: 'text-amber-300 bg-amber-500/10 border-amber-500/25' }
@@ -105,9 +107,16 @@ function formatActivityTxt(user: { name: string; email: string }, logs: any[]): 
       if (m.reason === 'not_column_member')  lines.push(`     Motivo: não é membro da etapa de origem`)
       if (m.movedBy)          lines.push(`     Movido por: ${m.movedBy}`)
       if (m.boardTitle)       lines.push(`     Missão: ${m.boardTitle}`)
-      if (m.preview)          lines.push(`     Mensagem: "${m.preview}"`)
-      if (m.fileName)         lines.push(`     Arquivo: ${m.fileName} (${m.fileType ?? ''} · ${m.sizeBytes ? Math.round(m.sizeBytes / 1024) + ' KB' : ''})`)
-      if (m.mentionId)        lines.push(`     Resposta a marcação`)
+      if (m.preview)             lines.push(`     Mensagem: "${m.preview}"`)
+      if (m.fileName)            lines.push(`     Arquivo: ${m.fileName} (${m.fileType ?? ''} · ${m.sizeBytes ? Math.round(m.sizeBytes / 1024) + ' KB' : ''})`)
+      if (m.mentionId)           lines.push(`     Resposta a marcação`)
+      if (m.title && m.content)  lines.push(`     Comunicado: "${m.title}" — ${m.content}`)
+      if (m.announcementTitle && !m.title) lines.push(`     Comunicado: "${m.announcementTitle}"`)
+      if (m.announcementTitle && m.content) lines.push(`     Resposta: "${m.content}"`)
+      if (m.targetType) {
+        const targets: Record<string, string> = { ALL: 'Todos', BOARD: 'Missão', CARD: 'Card', USER: 'Usuário específico' }
+        lines.push(`     Destinatário: ${targets[m.targetType] ?? m.targetType}`)
+      }
     }
     lines.push('')
   })
