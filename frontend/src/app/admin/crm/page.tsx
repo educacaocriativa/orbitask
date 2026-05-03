@@ -33,8 +33,10 @@ interface StageHistory {
   movedBy?: { name: string }
   aiConversation?: any
 }
+const SEGMENTS = ['Editora', 'Escola', 'Varejo', 'Indústria', 'Tecnologia', 'Saúde', 'Outro']
+
 interface Lead {
-  id: string; companyName: string; companyPhone?: string
+  id: string; companyName: string; companyPhone?: string; segment?: string
   stage: CrmStage; position: number
   decisionMakers: DecisionMaker[]
   stageHistory: StageHistory[]
@@ -91,6 +93,11 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
           >💬</a>
         )}
       </div>
+      {lead.segment && (
+        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-display font-black tracking-wider bg-neon-violet/20 text-neon-violet/90 border border-neon-violet/30">
+          {lead.segment}
+        </span>
+      )}
 
       {primary && (
         <div className="flex items-center gap-1.5">
@@ -200,12 +207,14 @@ function LeadModal({ leadId, onClose, onUpdated }: {
   const [editingCompany, setEditingCompany] = useState(false)
   const [companyName, setCompanyName] = useState('')
   const [companyPhone, setCompanyPhone] = useState('')
+  const [segment, setSegment] = useState('')
 
   const reload = useCallback(async () => {
     const { data } = await api.get(`/crm/leads/${leadId}`)
     setLead(data.lead)
     setCompanyName(data.lead.companyName)
     setCompanyPhone(data.lead.companyPhone ?? '')
+    setSegment(data.lead.segment ?? '')
   }, [leadId])
 
   useEffect(() => { reload() }, [reload])
@@ -225,7 +234,7 @@ function LeadModal({ leadId, onClose, onUpdated }: {
 
   async function handleSaveCompany() {
     try {
-      await api.patch(`/crm/leads/${leadId}`, { companyName, companyPhone: companyPhone || null })
+      await api.patch(`/crm/leads/${leadId}`, { companyName, companyPhone: companyPhone || null, segment: segment || null })
       await reload(); onUpdated()
       setEditingCompany(false)
       toast.success('Atualizado ✅')
@@ -285,6 +294,11 @@ function LeadModal({ leadId, onClose, onUpdated }: {
                     className="w-full px-3 py-1.5 rounded-xl text-sm font-display font-bold input-space" />
                   <input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)}
                     placeholder="Telefone empresa (+55...)" className="w-full px-3 py-1.5 rounded-xl text-sm font-body input-space" />
+                  <select value={segment} onChange={(e) => setSegment(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-xl text-sm font-body input-space">
+                    <option value="">Segmento...</option>
+                    {SEGMENTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
                   <div className="flex gap-2">
                     <button onClick={() => setEditingCompany(false)} className="text-xs px-3 py-1.5 rounded-lg border border-white/15 text-white/60 hover:bg-white/5 transition-all">Cancelar</button>
                     <button onClick={handleSaveCompany} className="text-xs px-3 py-1.5 rounded-lg text-white font-display font-black transition-all" style={{ background: 'linear-gradient(135deg,#7c3aed,#06b6d4)' }}>Salvar</button>
@@ -366,6 +380,7 @@ function LeadModal({ leadId, onClose, onUpdated }: {
             <div className="space-y-3">
               <InfoRow label="Empresa" value={lead.companyName} />
               <InfoRow label="Telefone da Empresa" value={lead.companyPhone} phone />
+              <InfoRow label="Segmento" value={lead.segment} />
               <InfoRow label="Criado em" value={new Date(lead.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} />
               <InfoRow label="Etapa atual" value={`${cfg.emoji} ${cfg.label}`} />
               <InfoRow label="Total de movimentações" value={String(lead.stageHistory.length)} />
@@ -639,6 +654,7 @@ function ProductModal({ onClose, onSaved, editProduct }: {
 function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [companyName, setCompanyName] = useState('')
   const [companyPhone, setCompanyPhone] = useState('')
+  const [segment, setSegment] = useState('')
   const [dmName, setDmName] = useState('')
   const [dmRole, setDmRole] = useState('')
   const [dmEmail, setDmEmail] = useState('')
@@ -654,6 +670,7 @@ function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
       await api.post('/crm/leads', {
         companyName: companyName.trim(),
         companyPhone: companyPhone.trim() || undefined,
+        segment: segment || undefined,
         decisionMakers: dmName.trim()
           ? [{ name: dmName.trim(), role: dmRole.trim() || undefined, email: dmEmail.trim() || undefined, phonePersonal: dmPhone.trim() || undefined, linkedin: dmLinkedin.trim() || undefined, isPrimary: true }]
           : [],
@@ -696,6 +713,14 @@ function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
                 <label className="block text-[11px] font-display font-black text-white/60 uppercase tracking-widest mb-1">Telefone Empresa (WhatsApp)</label>
                 <input value={companyPhone} onChange={(e) => setCompanyPhone(e.target.value)}
                   placeholder="+55 11 9..." className="w-full px-3 py-2.5 rounded-xl text-sm font-body input-space" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-display font-black text-white/60 uppercase tracking-widest mb-1">Segmento</label>
+                <select value={segment} onChange={(e) => setSegment(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl text-sm font-body input-space">
+                  <option value="">Selecione...</option>
+                  {SEGMENTS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
             </div>
           </div>

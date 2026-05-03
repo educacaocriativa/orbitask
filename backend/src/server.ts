@@ -98,13 +98,14 @@ async function ensureCrmTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
     [`crm_leads`, `CREATE TABLE IF NOT EXISTS crm_leads (
       id VARCHAR(191) NOT NULL PRIMARY KEY, company_name VARCHAR(191) NOT NULL,
-      company_phone VARCHAR(191), stage ENUM(${stage}) NOT NULL DEFAULT 'LEAD',
+      company_phone VARCHAR(191), segment VARCHAR(191), stage ENUM(${stage}) NOT NULL DEFAULT 'LEAD',
       position INT NOT NULL DEFAULT 0, apify_source_url VARCHAR(191), apify_raw_data JSON,
       is_active TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
       updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
       INDEX crm_leads_stage_position_idx (stage, position)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+    [`crm_leads.segment (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS segment VARCHAR(191) NULL`],
     [`crm_decision_makers`, `CREATE TABLE IF NOT EXISTS crm_decision_makers (
       id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
       name VARCHAR(191) NOT NULL, role VARCHAR(191), email VARCHAR(191),

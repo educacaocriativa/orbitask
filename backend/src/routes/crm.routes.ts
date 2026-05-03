@@ -73,6 +73,7 @@ export async function crmRoutes(app: FastifyInstance) {
     const body = request.body as {
       companyName: string
       companyPhone?: string
+      segment?: string
       decisionMakers?: Array<{
         name: string; role?: string; email?: string
         phoneCompany?: string; phonePersonal?: string; linkedin?: string
@@ -90,6 +91,7 @@ export async function crmRoutes(app: FastifyInstance) {
       data: {
         companyName:  body.companyName.trim(),
         companyPhone: body.companyPhone?.trim() || null,
+        segment:      body.segment?.trim() || null,
         stage:        'LEAD',
         position:     (lastLead?.position ?? -1) + 1,
         decisionMakers: body.decisionMakers?.length
@@ -109,13 +111,14 @@ export async function crmRoutes(app: FastifyInstance) {
   app.patch('/crm/leads/:id', { preHandler: [authenticate] }, async (request, reply) => {
     if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
-    const body = request.body as { companyName?: string; companyPhone?: string }
+    const body = request.body as { companyName?: string; companyPhone?: string; segment?: string }
 
     const lead = await prisma.crmLead.update({
       where: { id },
       data: {
         ...(body.companyName  && { companyName:  body.companyName.trim() }),
         ...(body.companyPhone !== undefined && { companyPhone: body.companyPhone?.trim() || null }),
+        ...(body.segment      !== undefined && { segment: body.segment?.trim() || null }),
       },
       include: LEAD_INCLUDE,
     })
