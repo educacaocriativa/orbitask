@@ -10,7 +10,7 @@ REDIS_PID=$!
 i=0
 while [ $i -lt 20 ]; do
   if redis-cli -p 6379 ping 2>/dev/null | grep -q PONG; then
-    echo "Redis OK"
+    echo "✅ Redis OK"
     break
   fi
   i=$((i + 1))
@@ -18,12 +18,31 @@ while [ $i -lt 20 ]; do
 done
 
 if [ $i -eq 20 ]; then
-  echo "AVISO: Redis nao respondeu em 20s, continuando mesmo assim..."
+  echo "⚠️  Redis não respondeu em 20s, continuando..."
 fi
 
-# Sincroniza schema com o banco de dados
-echo "Running prisma db push..."
-npx prisma db push --skip-generate --accept-data-loss || echo "AVISO: prisma db push falhou, continuando..."
+# Sincroniza schema com o banco de dados (com retry)
+echo "🔄 Sincronizando schema com o banco..."
+MAX_RETRIES=5
+RETRY=0
+DB_SYNCED=0
+
+while [ $RETRY -lt $MAX_RETRIES ]; do
+  if node_modules/.bin/prisma db push --skip-generate --accept-data-loss 2>&1; then
+    echo "✅ Schema sincronizado com sucesso"
+    DB_SYNCED=1
+    break
+  fi
+  RETRY=$((RETRY + 1))
+  echo "⚠️  Tentativa $RETRY/$MAX_RETRIES falhou. Aguardando 5s..."
+  sleep 5
+done
+
+if [ $DB_SYNCED -eq 0 ]; then
+  echo "❌ ATENÇÃO: prisma db push falhou após $MAX_RETRIES tentativas."
+  echo "   Verifique DATABASE_URL e conectividade com o banco."
+  echo "   A aplicação iniciará mas o banco pode estar desatualizado."
+fi
 
 # Inicia a aplicação
 exec node dist/server.js
