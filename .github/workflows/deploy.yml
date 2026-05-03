@@ -11,6 +11,7 @@ env:
   AWS_REGION_RUNNER: us-east-2
   ECR_REPOSITORY:    540280374180.dkr.ecr.us-east-1.amazonaws.com/orbitask-backend
   APP_RUNNER_ARN:    arn:aws:apprunner:us-east-2:540280374180:service/orbitask/b30957f47517415593b31e84b534eee5
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── 1. Quality Checks ────────────────────────────────────
@@ -111,7 +112,6 @@ jobs:
           EXIT=$?
           echo "$OUTPUT"
           if [ $EXIT -ne 0 ]; then
-            # "already" = serviço já está atualizando, não é erro crítico
             echo "$OUTPUT" | grep -qi "operation_in_progress\|already" \
               && echo "ℹ️ Deploy já em andamento — sem ação necessária" && exit 0
             echo "❌ Falha ao disparar deploy. Verifique o console AWS App Runner (us-east-2)."
