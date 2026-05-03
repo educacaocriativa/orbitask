@@ -61,8 +61,17 @@ jobs:
       - name: Trigger App Runner deployment
         run: |
           echo "🚀 Disparando deploy no App Runner..."
-          aws apprunner start-deployment \
+          OUTPUT=$(aws apprunner start-deployment \
             --service-arn "${{ env.APP_RUNNER_ARN }}" \
-            --no-cli-pager \
-            && echo "✅ Deploy iniciado em $(date)" \
-            || echo "⚠️ start-deployment retornou erro (pode estar em andamento)"
+            --no-cli-pager 2>&1)
+          EXIT=$?
+          echo "$OUTPUT"
+
+          if [ $EXIT -eq 0 ]; then
+            echo "✅ Deploy iniciado com sucesso"
+          else
+            # operation_in_progress = já está atualizando, ok
+            echo "$OUTPUT" | grep -qi "operation_in_progress\|already in progress" \
+              && echo "ℹ️ Deploy já em andamento" \
+              || { echo "❌ Falha ao disparar deploy: $OUTPUT"; exit 1; }
+          fi
