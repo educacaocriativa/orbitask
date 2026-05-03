@@ -229,7 +229,7 @@ REGRAS OBRIGATÓRIAS para esta primeira mensagem:
     try {
       const response = await this.client.messages.create({
         model:      'claude-opus-4-7',
-        max_tokens: 1024,
+        max_tokens: 4096,
         thinking:   { type: 'adaptive' },
         system: [{
           type:          'text',
@@ -240,13 +240,17 @@ REGRAS OBRIGATÓRIAS para esta primeira mensagem:
       })
 
       const result = this.parseAiResponse(response)
-      if (!result) return null
+      if (!result) {
+        console.error('[CrmAI] parseAiResponse retornou null — resposta:', JSON.stringify(response.content))
+        return null
+      }
 
       await this.whatsapp.sendMessage({ phone, message: result.reply })
       return result.reply
-    } catch (err) {
-      console.error('[CrmAI] sendFirstMessage error:', err)
-      return null
+    } catch (err: any) {
+      console.error('[CrmAI] sendFirstMessage error:', err?.message ?? err)
+      console.error('[CrmAI] detalhes:', JSON.stringify(err?.error ?? err?.status ?? ''))
+      throw err  // propaga para o route handler mostrar o erro real
     }
   }
 
