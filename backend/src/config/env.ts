@@ -41,8 +41,10 @@ const envSchema = z.object({
 
   CRM_WEBHOOK_SECRET: z.string().default('crm-webhook-secret-change-me'),
 
-  ANTHROPIC_API_KEY:  z.string().optional(),
-  CRM_AI_SENDER_NAME: z.string().default('Assistente Comercial'),
+  ANTHROPIC_API_KEY:    z.string().optional(),
+  CRM_AI_SENDER_NAME:   z.string().default('Professor Tiago Mariano'),
+  CRM_AI_SENDER_TITLE:  z.string().default('CEO da Educação Criativa'),
+  CRM_AI_COMPANY_NAME:  z.string().default('Educação Criativa'),
 
   APIFY_API_TOKEN:  z.string().optional(),
   APIFY_ACTOR_ID:   z.string().optional(),

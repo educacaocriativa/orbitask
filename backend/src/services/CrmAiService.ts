@@ -195,16 +195,30 @@ export class CrmAiService {
     const phone = decisionMaker.phonePersonal ?? decisionMaker.phoneCompany
     if (!phone) return null
 
-    const prompt = `Gere a primeira mensagem de prospecção para:
+    const senderName   = env.CRM_AI_SENDER_NAME  ?? 'Professor Tiago Mariano'
+    const senderTitle  = env.CRM_AI_SENDER_TITLE ?? 'CEO da Educação Criativa'
+    const companyName  = env.CRM_AI_COMPANY_NAME ?? 'Educação Criativa'
+
+    const productContext = products.length > 0
+      ? `\n\nProdutos da nossa empresa para contextualizar (NÃO mencione nomes ou preços ainda):\n${
+          products.map(p => `- ${p.name}${p.description ? `: ${p.description}` : ''}`).join('\n')
+        }`
+      : ''
+
+    const prompt = `Gere a PRIMEIRA mensagem de prospecção via WhatsApp para:
 - Empresa: ${lead.companyName}${lead.segment ? ` (${lead.segment})` : ''}
 - Decisor: ${decisionMaker.name}${decisionMaker.role ? ` — ${decisionMaker.role}` : ''}
+- Quem envia: ${senderName}, ${senderTitle}
+- Nossa empresa: ${companyName}${productContext}
 
-Esta é a PRIMEIRA vez que entramos em contato. A mensagem deve:
-- Ser curta (máximo 3 linhas)
-- Ser humana e personalizada para a empresa/segmento
-- Despertar curiosidade sem revelar o produto
-- Terminar com UMA pergunta aberta sobre desafios ou objetivos
-- NÃO mencionar produto, preço ou "solução" ainda`
+REGRAS OBRIGATÓRIAS para esta primeira mensagem:
+1. Chame o decisor PELO NOME (use apenas o primeiro nome)
+2. Apresente-se como "${senderName}, ${senderTitle}"
+3. Mencione brevemente o que a ${companyName} faz (use os produtos para contexto, mas NÃO cite nomes nem preços)
+4. Seja muito curto: máximo 3-4 linhas no total
+5. Termine com UMA pergunta aberta e consultiva sobre um desafio ou objetivo da empresa
+6. Tom humano, caloroso, nunca corporativo
+7. NÃO use palavras como "solução", "produto", "oferta", "proposta" ou "preço"`
 
     try {
       const response = await this.client.messages.create({

@@ -1,6 +1,11 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import {
+  DndContext, DragOverlay, useDroppable, useDraggable,
+  MouseSensor, TouchSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
 import { useRouter } from 'next/navigation'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
@@ -77,6 +82,29 @@ function waLink(phone?: string) {
   if (!phone) return null
   const clean = phone.replace(/\D/g, '')
   return `https://wa.me/${clean}`
+}
+
+// ── Wrappers de drag-and-drop ────────────────────────────
+function DraggableLead({ id, children }: { id: string; children?: any }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: transform ? `translate(${transform.x}px,${transform.y}px)` : undefined, opacity: isDragging ? 0.35 : 1, cursor: 'grab' }}
+      {...attributes} {...listeners}
+    >
+      {children}
+    </div>
+  )
+}
+
+function DroppableColumn({ id, children }: { id: string; children?: any }) {
+  const { setNodeRef, isOver } = useDroppable({ id })
+  return (
+    <div ref={setNodeRef} className={`flex-1 overflow-y-auto scrollbar-space space-y-2 pr-1 rounded-xl transition-all ${isOver ? 'ring-1 ring-neon-violet/50 bg-neon-violet/5' : ''}`}>
+      {children}
+    </div>
+  )
 }
 
 // ── Lead Card (compact) ───────────────────────────────────
@@ -236,9 +264,10 @@ function LeadModal({ leadId, onClose, onUpdated }: {
 }) {
   const [lead, setLead] = useState<Lead | null>(null)
   const [tab, setTab] = useState<'info' | 'decisores' | 'historico' | 'mensagens'>('info')
-  const [messages, setMessages]     = useState<CrmMessage[]>([])
-  const [msgInput, setMsgInput]     = useState('')
-  const [sendingMsg, setSendingMsg] = useState(false)
+  const [messages, setMessages]         = useState<CrmMessage[]>([])
+  const [msgInput, setMsgInput]         = useState('')
+  const [sendingMsg, setSendingMsg]     = useState(false)
+  const [allProducts, setAllProducts]   = useState<Product[]>([])
   const [addingDm, setAddingDm] = useState(false)
   const [editingDmId, setEditingDmId] = useState<string | null>(null)
   const [movingStage, setMovingStage] = useState<CrmStage | null>(null)
@@ -260,6 +289,21 @@ function LeadModal({ leadId, onClose, onUpdated }: {
   }, [leadId])
 
   useEffect(() => { reload() }, [reload])
+
+  // Carrega todos os produtos disponíveis para seleção
+  useEffect(() => {
+    api.get('/crm/products').then(({ data }) => setAllProducts(data.products ?? [])).catch(() => {})
+  }, [])
+
+  async function addProduct(productId: string) {
+    await api.post(`/crm/leads/${leadId}/products/${productId}`)
+    await reload()
+  }
+
+  async function removeProduct(productId: string) {
+    await api.delete(`/crm/leads/${leadId}/products/${productId}`)
+    await reload()
+  }
 
   const loadMessages = useCallback(async () => {
     const { data } = await api.get(`/crm/leads/${leadId}/messages`)
@@ -464,6 +508,33 @@ function LeadModal({ leadId, onClose, onUpdated }: {
               <InfoRow label="Criado em" value={new Date(lead.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} />
               <InfoRow label="Etapa atual" value={`${cfg.emoji} ${cfg.label}`} />
               <InfoRow label="Total de movimentações" value={String(lead.stageHistory.length)} />
+
+              {/* Produtos para comunicação */}
+              <div className="pt-3 border-t border-white/8">
+                <p className="text-[11px] font-display font-black text-white/45 uppercase tracking-widest mb-2">📦 Produtos para Comunicação</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {lead.leadProducts.length === 0 && (
+                    <p className="text-xs text-white/30 font-body italic">Nenhum produto associado</p>
+                  )}
+                  {lead.leadProducts.map(lp => (
+                    <span key={lp.id} className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-display font-black bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                      {lp.product.name}
+                      <button onClick={() => removeProduct(lp.productId)}
+                        className="text-white/40 hover:text-red-400 transition-colors ml-0.5">✕</button>
+                    </span>
+                  ))}
+                </div>
+                {allProducts.filter(p => !lead.leadProducts.some(lp => lp.productId === p.id)).length > 0 && (
+                  <select
+                    onChange={e => { if (e.target.value) { addProduct(e.target.value); e.currentTarget.value = '' } }}
+                    className="w-full px-3 py-2 rounded-xl text-xs font-body input-space">
+                    <option value="">+ Associar produto...</option>
+                    {allProducts
+                      .filter(p => !lead.leadProducts.some(lp => lp.productId === p.id))
+                      .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                )}
+              </div>
             </div>
           )}
 
@@ -1239,6 +1310,37 @@ export default function CrmPage() {
   const [showSkills, setShowSkills]         = useState(false)
   const [showProducts, setShowProducts]     = useState(false)
   const [showCrmAccess, setShowCrmAccess]   = useState(false)
+  const [activeDragLead, setActiveDragLead] = useState<Lead | null>(null)
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor,  { activationConstraint: { delay: 250, tolerance: 8 } }),
+  )
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    setActiveDragLead(null)
+    if (!over) return
+
+    const leadId  = active.id as string
+    const toStage = over.id as CrmStage
+    if (!STAGES.some(s => s.id === toStage)) return
+
+    const fromStage = STAGES.map(s => s.id).find(s => kanban?.[s]?.some((l: Lead) => l.id === leadId))
+    if (!fromStage || fromStage === toStage) return
+
+    try {
+      await api.post(`/crm/leads/${leadId}/move`, { toStage })
+      fetchLeads()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao mover lead')
+    }
+  }
+
+  function handleDragStart(event: { active: { id: string } }) {
+    const lead = STAGES.flatMap(s => kanban?.[s.id] ?? []).find((l: Lead) => l.id === event.active.id)
+    if (lead) setActiveDragLead(lead)
+  }
   useEffect(() => {
     if (user && user.role !== 'ADMIN') { router.replace('/board'); return }
   }, [user, router])
@@ -1317,40 +1419,54 @@ export default function CrmPage() {
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }} className="text-5xl">🛸</motion.div>
           </div>
         ) : (
-          <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4 px-6">
-            <div className="flex gap-4 h-full" style={{ minWidth: `${STAGES.length * 280}px` }}>
-              {STAGES.map((stage) => {
-                const leads = kanban?.[stage.id] ?? []
-                return (
-                  <div key={stage.id} className="flex flex-col w-[268px] shrink-0">
-                    {/* Column header */}
-                    <div className="flex items-center justify-between mb-3 px-1">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full" style={{ background: stage.color }} />
-                        <span className="text-xs font-display font-black text-white tracking-wide">{stage.label}</span>
-                      </div>
-                      <span className="text-xs text-white/45 font-mono font-bold px-2 py-0.5 rounded-md bg-white/6">
-                        {leads.length}
-                      </span>
-                    </div>
-
-                    {/* Cards */}
-                    <div className="flex-1 overflow-y-auto scrollbar-space space-y-2 pr-1"
-                      style={{ borderTop: `2px solid ${stage.color}50`, paddingTop: '10px' }}>
-                      {leads.length === 0 && (
-                        <div className="text-center py-8 text-white/20 text-xs font-body">
-                          Nenhum lead
+          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4 px-6">
+              <div className="flex gap-4 h-full" style={{ minWidth: `${STAGES.length * 280}px` }}>
+                {STAGES.map((stage) => {
+                  const leads = kanban?.[stage.id] ?? []
+                  return (
+                    <div key={stage.id} className="flex flex-col w-[268px] shrink-0">
+                      {/* Column header */}
+                      <div className="flex items-center justify-between mb-3 px-1">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full" style={{ background: stage.color }} />
+                          <span className="text-xs font-display font-black text-white tracking-wide">{stage.label}</span>
                         </div>
-                      )}
-                      {leads.map((lead) => (
-                        <LeadCard key={lead.id} lead={lead} onClick={() => setOpenLeadId(lead.id)} onDelete={() => { deleteLead(lead.id) }} />
-                      ))}
+                        <span className="text-xs text-white/45 font-mono font-bold px-2 py-0.5 rounded-md bg-white/6">
+                          {leads.length}
+                        </span>
+                      </div>
+
+                      {/* Cards — droppable */}
+                      <DroppableColumn id={stage.id}>
+                        <div style={{ borderTop: `2px solid ${stage.color}50`, paddingTop: '10px', minHeight: '60px' }}>
+                          {leads.length === 0 && (
+                            <div className="text-center py-8 text-white/20 text-xs font-body">
+                              Nenhum lead
+                            </div>
+                          )}
+                          {leads.map((lead: Lead) => (
+                            <div key={lead.id} className="mb-2">
+                              <DraggableLead id={lead.id}>
+                                <LeadCard lead={lead} onClick={() => setOpenLeadId(lead.id)} onDelete={() => { deleteLead(lead.id) }} />
+                              </DraggableLead>
+                            </div>
+                          ))}
+                        </div>
+                      </DroppableColumn>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
+            <DragOverlay>
+              {activeDragLead && (
+                <div className="opacity-90 rotate-1 scale-105">
+                  <LeadCard lead={activeDragLead} onClick={() => {}} onDelete={() => {}} />
+                </div>
+              )}
+            </DragOverlay>
+          </DndContext>
         )}
       </main>
 
