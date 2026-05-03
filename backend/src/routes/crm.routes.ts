@@ -519,13 +519,19 @@ export async function crmRoutes(app: FastifyInstance) {
 
     const lead = await prisma.crmLead.findUnique({
       where:   { id },
-      include: { decisionMakers: { orderBy: { isPrimary: 'desc' } } },
+      include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
     })
     if (!lead) throw new AppError('Lead não encontrado', 404)
 
+    // Busca telefone: decisor principal → qualquer decisor → telefone da empresa
     const primary = lead.decisionMakers[0]
-    const phone   = primary?.phonePersonal ?? primary?.phoneCompany
-    if (!phone) throw new AppError('Lead sem número de WhatsApp cadastrado', 400)
+    const phone   = primary?.phonePersonal
+                 ?? primary?.phoneCompany
+                 ?? lead.decisionMakers.find(d => d.phonePersonal)?.phonePersonal
+                 ?? lead.decisionMakers.find(d => d.phoneCompany)?.phoneCompany
+                 ?? lead.companyPhone
+
+    if (!phone) throw new AppError('Nenhum número de WhatsApp encontrado para este lead. Cadastre o telefone do decisor.', 400)
 
     // Envia via WhatsApp
     const { WhatsAppService } = await import('../services/WhatsAppService')
