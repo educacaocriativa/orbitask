@@ -78,6 +78,19 @@ export async function adminRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string }
     const { role } = request.body as { role: UserRole }
     const user = await adminService.updateUserRole(id, role)
+
+    // Quando promovido a ADMIN, garante acesso Organizer no Drive (em background)
+    if (role === 'ADMIN' && googleDrive.isConfigured) {
+      setImmediate(async () => {
+        try {
+          await googleDrive.ensureOrganizersOnSharedDrive([user.email])
+          console.log(`[Admin] Drive Organizer garantido para ${user.email}`)
+        } catch (err: any) {
+          console.warn(`[Admin] Erro ao promover Drive para ${user.email}:`, err?.message)
+        }
+      })
+    }
+
     return reply.send({ user })
   })
 

@@ -14,13 +14,27 @@ import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
 
 export function Navbar() {
-  const { user, logout }  = useAuthStore()
-  const { board }         = useBoardStore()
+  const { user, logout, setUser } = useAuthStore()
+  const { board }                 = useBoardStore()
   const [menuOpen, setMenuOpen]           = useState(false)
   const [showCreate, setShowCreate]       = useState(false)
   const [showInbox, setShowInbox]         = useState(false)
   const [unreadCount, setUnreadCount]     = useState(0)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Sincroniza o perfil do usuário com o banco ao montar
+  // Garante que mudanças de role/crmAccess feitas pelo admin apareçam sem precisar de logout
+  useEffect(() => {
+    if (!user) return
+    api.get('/auth/me').then(({ data }) => {
+      if (!data.user) return
+      const changed =
+        data.user.role      !== user.role ||
+        data.user.crmAccess !== user.crmAccess ||
+        data.user.name      !== user.name
+      if (changed) setUser({ ...user, ...data.user })
+    }).catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     function handler(e: MouseEvent) {

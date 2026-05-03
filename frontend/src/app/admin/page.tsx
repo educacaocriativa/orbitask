@@ -300,12 +300,16 @@ function UserFormModal({ open, onClose, onSave, editUser }: {
     setSaving(true)
     try {
       if (isEdit) {
+        const roleChanged = role !== editUser!.role
         await Promise.all([
-          api.patch(`/admin/users/${editUser!.id}/role`,   { role }),
-          api.patch(`/admin/users/${editUser!.id}/status`, { isActive: active }),
-          api.patch(`/admin/users/${editUser!.id}/profile`,  { name: name.trim(), phoneWhatsapp: phone.trim() || null }),
+          api.patch(`/admin/users/${editUser!.id}/role`,    { role }),
+          api.patch(`/admin/users/${editUser!.id}/status`,  { isActive: active }),
+          api.patch(`/admin/users/${editUser!.id}/profile`, { name: name.trim(), phoneWhatsapp: phone.trim() || null }),
         ])
         toast.success('Usuário atualizado ✅')
+        if (roleChanged) {
+          toast('⚠️ Função alterada. O usuário precisa fazer logout e login para as permissões entrarem em vigor em todas as telas.', { duration: 6000 })
+        }
         onSave({ ...editUser!, name, role, isActive: active, phoneWhatsapp: phone.trim() || undefined })
       } else {
         const { data } = await api.post('/admin/users', {
