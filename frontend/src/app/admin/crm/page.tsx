@@ -633,6 +633,26 @@ function LeadModal({ leadId, onClose, onUpdated }: {
                 })}
               </div>
 
+              {/* Botão primeira mensagem — só aparece se não há mensagens ainda */}
+              {messages.length === 0 && (
+                <div className="shrink-0 pb-3">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const { data } = await api.post(`/crm/leads/${leadId}/send-first-message`)
+                        toast.success('Primeira mensagem enviada 🤖')
+                        loadMessages()
+                      } catch (err: any) {
+                        toast.error(err?.response?.data?.error ?? 'Erro ao enviar primeira mensagem')
+                      }
+                    }}
+                    className="w-full py-2.5 rounded-xl text-sm font-display font-black text-white border border-neon-violet/40 hover:bg-neon-violet/12 transition-all"
+                  >
+                    🤖 Enviar Primeira Mensagem com IA
+                  </button>
+                </div>
+              )}
+
               {/* Campo de envio manual */}
               <div className="flex gap-2 pt-3 border-t border-white/8 shrink-0">
                 <input

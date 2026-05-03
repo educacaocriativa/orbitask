@@ -557,6 +557,50 @@ export async function crmRoutes(app: FastifyInstance) {
     return reply.status(201).send({ message })
   })
 
+  // ── POST /crm/leads/:id/send-first-message — disparo manual ─
+  app.post('/crm/leads/:id/send-first-message', { preHandler: [authenticate] }, async (request, reply) => {
+    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
+    const { id } = request.params as { id: string }
+
+    if (!crmAi.isConfigured) throw new AppError('IA não configurada (ANTHROPIC_API_KEY ausente)', 503)
+
+    const [lead, products, skills] = await Promise.all([
+      prisma.crmLead.findUnique({
+        where:   { id },
+        include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }] } },
+      }),
+      (prisma as any).crmProduct?.findMany({ where: { isActive: true } }) ?? [],
+      (prisma as any).crmSkill?.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } }) ?? [],
+    ])
+
+    if (!lead) throw new AppError('Lead não encontrado', 404)
+
+    const primary = lead.decisionMakers[0]
+    if (!primary) throw new AppError('Lead sem decisor cadastrado', 400)
+
+    const msg = await crmAi.sendFirstMessage(lead, primary, products, skills)
+    if (!msg) throw new AppError('Não foi possível enviar — verifique se o decisor tem telefone cadastrado', 400)
+
+    // Salva como mensagem e no histórico
+    await Promise.all([
+      (prisma as any).crmMessage?.create({
+        data: { leadId: id, direction: 'OUTBOUND', content: msg, sentBy: 'AI', senderName: 'IA Comercial' },
+      }),
+      prisma.crmStageHistory.create({
+        data: {
+          leadId:     id,
+          fromStage:  lead.stage,
+          toStage:    lead.stage,
+          isAiMove:   true,
+          notes:      'Primeira mensagem enviada manualmente pela IA',
+          aiConversation: JSON.parse(JSON.stringify([{ role: 'assistant', content: msg }])),
+        },
+      }),
+    ])
+
+    return reply.send({ ok: true, message: msg })
+  })
+
   // ── GET /crm/ai/status — verifica se IA está configurada ─
   app.get('/crm/ai/status', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)

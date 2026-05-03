@@ -192,8 +192,14 @@ export class CrmAiService {
   ): Promise<string | null> {
     if (!this.client) return null
 
-    const phone = decisionMaker.phonePersonal ?? decisionMaker.phoneCompany
-    if (!phone) return null
+    // Tenta telefone do decisor, depois da empresa
+    const phone = decisionMaker.phonePersonal
+               ?? decisionMaker.phoneCompany
+               ?? lead.companyPhone
+    if (!phone) {
+      console.warn(`[CrmAI] sendFirstMessage: nenhum telefone encontrado para o lead ${lead.id} (${lead.companyName})`)
+      return null
+    }
 
     const senderName   = env.CRM_AI_SENDER_NAME  ?? 'Professor Tiago Mariano'
     const senderTitle  = env.CRM_AI_SENDER_TITLE ?? 'CEO da Educação Criativa'
