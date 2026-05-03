@@ -92,6 +92,7 @@ model User {
   mentionReplies    Mention[]           @relation("MentionReplier")
   accessLogs              AccessLog[]
   crmStageHistory         CrmStageHistory[]
+  crmMessages             CrmMessage[]
   notifications           NotificationQueue[]    @relation("NotificationRecipient")
   announcementsCreated    Announcement[]         @relation("AnnouncementCreator")
   announcementReplies     AnnouncementReply[]    @relation("AnnouncementReplier")
