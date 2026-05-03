@@ -20,6 +20,7 @@ import { userRoutes }      from './routes/user.routes'
 import { searchRoutes }    from './routes/search.routes'
 import { notificationRoutes } from './routes/notification.routes'
 import { announcementRoutes } from './routes/announcement.routes'
+import { crmRoutes }          from './routes/crm.routes'
 import { websocketRoutes } from './websocket/boardSocket'
 
 import { AppError }          from './utils/AppError'
@@ -54,6 +55,7 @@ export async function buildApp() {
   await app.register(searchRoutes)
   await app.register(notificationRoutes)
   await app.register(announcementRoutes)
+  await app.register(crmRoutes)
   await app.register(websocketRoutes)
 
   app.get('/health', async () => ({

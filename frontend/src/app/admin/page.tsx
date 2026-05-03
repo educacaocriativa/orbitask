@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import api from '@/lib/api'
+import { useRouter } from 'next/navigation'
 import { Navbar } from '@/components/ui/Navbar'
 import { Avatar } from '@/components/ui/Avatar'
 import { cn, formatRelativeDate } from '@/lib/utils'
@@ -530,6 +531,7 @@ export default function AdminPage() {
   const [showUserForm, setShowUserForm]       = useState(false)
   const [showImportUsers, setShowImportUsers] = useState(false)
   const [editingUser, setEditingUser]         = useState<User | null>(null)
+  const router = useRouter()
   const [resetPasswordUser, setResetPasswordUser] = useState<User | null>(null)
   const [logSearch, setLogSearch]   = useState('')
   const [selectedLog, setSelectedLog] = useState<Log | null>(null)
@@ -593,6 +595,13 @@ export default function AdminPage() {
           <div className="flex items-center justify-between">
             <h1 className="font-display text-2xl font-black text-white tracking-wide">Painel Administrativo</h1>
             <div className="flex items-center gap-3">
+              <motion.button
+                onClick={() => router.push('/admin/crm')}
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-neon-violet/35 bg-neon-violet/10 text-violet-300 text-xs font-body font-bold hover:bg-neon-violet/20 transition-all"
+              >
+                🎯 CRM
+              </motion.button>
               <motion.button
                 onClick={syncDrive}
                 disabled={syncingDrive}

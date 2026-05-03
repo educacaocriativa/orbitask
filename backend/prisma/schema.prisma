@@ -90,6 +90,7 @@ model User {
   mentionsMade      Mention[]           @relation("MentionedBy")
   mentionReplies    Mention[]           @relation("MentionReplier")
   accessLogs              AccessLog[]
+  crmStageHistory         CrmStageHistory[]
   notifications           NotificationQueue[]    @relation("NotificationRecipient")
   announcementsCreated    Announcement[]         @relation("AnnouncementCreator")
   announcementReplies     AnnouncementReply[]    @relation("AnnouncementReplier")
@@ -404,6 +405,81 @@ model AnnouncementRead {
 
   @@unique([announcementId, userId])
   @@map("announcement_reads")
+}
+
+// ─────────────────────────────────────────────
+//  CRM
+// ─────────────────────────────────────────────
+
+enum CrmStage {
+  LEAD
+  PRIMEIRO_CONTATO
+  NIVEL_CONSCIENCIA_1
+  NIVEL_CONSCIENCIA_2
+  NIVEL_CONSCIENCIA_3
+  FINALIZADO
+  FECHADO
+}
+
+model CrmLead {
+  id             String    @id @default(uuid())
+  companyName    String    @map("company_name")
+  companyPhone   String?   @map("company_phone")
+  stage          CrmStage  @default(LEAD)
+  position       Int       @default(0)
+
+  apifySourceUrl String?   @map("apify_source_url")
+  apifyRawData   Json?     @map("apify_raw_data")
+
+  isActive       Boolean   @default(true) @map("is_active")
+
+  decisionMakers CrmDecisionMaker[]
+  stageHistory   CrmStageHistory[]
+
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([stage, position])
+  @@map("crm_leads")
+}
+
+model CrmDecisionMaker {
+  id            String   @id @default(uuid())
+  leadId        String   @map("lead_id")
+  lead          CrmLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  name          String
+  role          String?
+  email         String?
+  phoneCompany  String?  @map("phone_company")
+  phonePersonal String?  @map("phone_personal")
+  linkedin      String?
+  isPrimary     Boolean  @default(false) @map("is_primary")
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("crm_decision_makers")
+}
+
+model CrmStageHistory {
+  id             String    @id @default(uuid())
+  leadId         String    @map("lead_id")
+  lead           CrmLead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  fromStage      CrmStage? @map("from_stage")
+  toStage        CrmStage  @map("to_stage")
+  notes          String?   @db.Text
+
+  isAiMove       Boolean   @default(false) @map("is_ai_move")
+  aiConversation Json?     @map("ai_conversation")
+
+  movedById      String?   @map("moved_by_id")
+  movedBy        User?     @relation(fields: [movedById], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@map("crm_stage_history")
 }
 
 // ─────────────────────────────────────────────

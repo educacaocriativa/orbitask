@@ -38,6 +38,8 @@ const envSchema = z.object({
 
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_WINDOW: z.coerce.number().default(60000),
+
+  CRM_WEBHOOK_SECRET: z.string().default('crm-webhook-secret-change-me'),
 })
 
 const _env = envSchema.safeParse(process.env)
