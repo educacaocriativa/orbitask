@@ -748,6 +748,8 @@ export default function CrmPage() {
   const [showNewLead, setShowNewLead]   = useState(false)
   const [showProduct, setShowProduct]   = useState(false)
   const [editProduct, setEditProduct]   = useState<Product | null>(null)
+  const [dbError, setDbError]           = useState(false)
+  const [initingDb, setInitingDb]       = useState(false)
 
   useEffect(() => {
     if (user && user.role !== 'ADMIN') { router.replace('/board'); return }
@@ -758,9 +760,29 @@ export default function CrmPage() {
       const { data } = await api.get('/crm/leads')
       setKanban(data.kanban)
       setTotal(data.total)
-    } catch { toast.error('Erro ao carregar CRM') }
+      setDbError(false)
+    } catch {
+      setDbError(true)
+      toast.error('Banco do CRM não inicializado. Clique em "Inicializar BD".')
+    }
     finally { setLoading(false) }
   }, [])
+
+  async function initDb() {
+    setInitingDb(true)
+    try {
+      const { data } = await api.post('/admin/crm/init-db')
+      if (data.ok) {
+        toast.success('Banco CRM inicializado! ✅')
+        setDbError(false)
+        fetchLeads()
+      } else {
+        toast.error(`Erros: ${data.errors?.join(', ')}`)
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao inicializar BD')
+    } finally { setInitingDb(false) }
+  }
 
   useEffect(() => { fetchLeads() }, [fetchLeads])
 
@@ -771,6 +793,25 @@ export default function CrmPage() {
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-6 pt-6 pb-4 shrink-0">
+          {/* Banner de erro de BD */}
+          {dbError && (
+            <div className="flex items-center justify-between mb-4 px-4 py-3 rounded-xl bg-red-950/50 border border-red-500/40">
+              <div className="flex items-center gap-2">
+                <span className="text-red-400">⚠️</span>
+                <span className="text-sm text-red-300 font-body font-semibold">
+                  Tabelas do CRM não foram criadas no banco de produção.
+                </span>
+              </div>
+              <button
+                onClick={initDb}
+                disabled={initingDb}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-display font-black text-white disabled:opacity-50 transition-all"
+                style={{ background: 'linear-gradient(135deg, #dc2626, #ef4444)' }}
+              >
+                {initingDb ? '⏳ Inicializando...' : '🔧 Inicializar BD CRM'}
+              </button>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-3">
               <button onClick={() => router.push('/admin')}
