@@ -757,8 +757,9 @@ export default function CrmPage() {
       const { data } = await api.get('/crm/leads')
       setKanban(data.kanban)
       setTotal(data.total)
-    } catch {
-      toast.error('Erro ao carregar leads. Verifique a conexão com o servidor.')
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? err?.response?.data?.error ?? err?.message ?? 'Erro desconhecido'
+      toast.error(`CRM: ${msg}`)
     }
     finally { setLoading(false) }
   }, [])
