@@ -67,9 +67,20 @@ function waLink(phone?: string) {
 }
 
 // ── Lead Card (compact) ───────────────────────────────────
-function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
+function LeadCard({ lead, onClick, onDelete }: { lead: Lead; onClick: () => void; onDelete: () => void }) {
   const primary = lead.decisionMakers.find((d) => d.isPrimary) ?? lead.decisionMakers[0]
   const cfg = stageConfig(lead.stage)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  function handleDelete(e: { stopPropagation: () => void }) {
+    e.stopPropagation()
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      setTimeout(() => setConfirmDelete(false), 3000)
+    } else {
+      onDelete()
+    }
+  }
 
   return (
     <motion.div
@@ -83,15 +94,28 @@ function LeadCard({ lead, onClick }: { lead: Lead; onClick: () => void }) {
         <p className="text-sm font-display font-bold text-white leading-snug flex-1 min-w-0 truncate">
           {lead.companyName}
         </p>
-        {lead.companyPhone && (
-          <a
-            href={waLink(lead.companyPhone)!}
-            target="_blank" rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="text-emerald-400 hover:text-emerald-300 text-xs shrink-0 transition-colors"
-            title="WhatsApp empresa"
-          >💬</a>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {lead.companyPhone && (
+            <a
+              href={waLink(lead.companyPhone)!}
+              target="_blank" rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="text-emerald-400 hover:text-emerald-300 text-xs transition-colors"
+              title="WhatsApp empresa"
+            >💬</a>
+          )}
+          <button
+            onClick={handleDelete}
+            title={confirmDelete ? 'Clique para confirmar exclusão' : 'Arquivar lead'}
+            className={`text-xs transition-all rounded px-1 py-0.5 ${
+              confirmDelete
+                ? 'text-red-400 bg-red-500/20 border border-red-500/40 font-black animate-pulse'
+                : 'text-white/25 hover:text-red-400'
+            }`}
+          >
+            {confirmDelete ? '⚠ Confirmar?' : '🗑'}
+          </button>
+        </div>
       </div>
       {lead.segment && (
         <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-display font-black tracking-wider bg-neon-violet/20 text-neon-violet/90 border border-neon-violet/30">
@@ -789,6 +813,14 @@ export default function CrmPage() {
     finally { setLoading(false) }
   }, [])
 
+  async function deleteLead(id: string) {
+    try {
+      await api.delete(`/crm/leads/${id}`)
+      toast.success('Lead arquivado')
+      fetchLeads()
+    } catch { toast.error('Erro ao arquivar lead') }
+  }
+
   useEffect(() => { fetchLeads() }, [fetchLeads])
 
   return (
@@ -859,7 +891,7 @@ export default function CrmPage() {
                         </div>
                       )}
                       {leads.map((lead) => (
-                        <LeadCard key={lead.id} lead={lead} onClick={() => setOpenLeadId(lead.id)} />
+                        <LeadCard key={lead.id} lead={lead} onClick={() => setOpenLeadId(lead.id)} onDelete={() => { deleteLead(lead.id) }} />
                       ))}
                     </div>
                   </div>
