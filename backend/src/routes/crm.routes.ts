@@ -282,7 +282,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
       // Evita duplicatas pelo nome da empresa (case-insensitive)
       const existing = await prisma.crmLead.findFirst({
-        where: { companyName: { equals: item.companyName, mode: 'insensitive' }, isActive: true },
+        where: { companyName: item.companyName, isActive: true },
       })
       if (existing) { skipped++; continue }
 
