@@ -4,6 +4,7 @@ import { prisma } from '../database/prisma'
 import { authenticate } from '../middlewares/auth'
 import { AppError } from '../utils/AppError'
 import { env } from '../config/env'
+import { crmAi } from '../services/CrmAiService'
 
 // ── Stage labels ──────────────────────────────────────────
 export const CRM_STAGES: CrmStage[] = [
@@ -150,6 +151,38 @@ export async function crmRoutes(app: FastifyInstance) {
       }),
     ])
 
+    // ── Trigger IA: ao mover para PRIMEIRO_CONTATO ──────────
+    if (toStage === 'PRIMEIRO_CONTATO' && crmAi.isConfigured) {
+      setImmediate(async () => {
+        try {
+          const fullLead = await prisma.crmLead.findUnique({
+            where: { id },
+            include: { decisionMakers: { orderBy: { isPrimary: 'desc' } } },
+          })
+          if (!fullLead) return
+          const primary = fullLead.decisionMakers[0]
+          if (!primary) return
+          const msg = await crmAi.sendFirstMessage(fullLead, primary)
+          if (msg) {
+            await prisma.crmStageHistory.create({
+              data: {
+                leadId:        id,
+                fromStage:     'PRIMEIRO_CONTATO',
+                toStage:       'PRIMEIRO_CONTATO',
+                isAiMove:      true,
+                notes:         'Primeira mensagem enviada pela IA',
+                aiConversation: JSON.parse(JSON.stringify([
+                  { role: 'assistant', content: msg },
+                ])),
+              },
+            })
+          }
+        } catch (err) {
+          console.error('[CRM] AI first message error:', err)
+        }
+      })
+    }
+
     return reply.send({ lead: updated })
   })
 
@@ -282,6 +315,156 @@ export async function crmRoutes(app: FastifyInstance) {
 
     return reply.send({ created, skipped, total: leads.length })
   })
+
+  // ── POST /crm/webhook/whatsapp — recebe mensagens da Evolution API ──
+  // Chamado pelo Evolution API quando um lead responde via WhatsApp
+  app.post('/crm/webhook/whatsapp', async (request, reply) => {
+    const { secret } = request.query as { secret?: string }
+    if (secret !== env.CRM_WEBHOOK_SECRET) {
+      return reply.status(401).send({ error: 'Token inválido' })
+    }
+
+    const body = request.body as EvolutionWebhookPayload
+
+    // Ignora mensagens enviadas por nós (fromMe) e eventos que não são mensagens
+    if (body.event !== 'messages.upsert') return reply.send({ ok: true })
+    if (body.data?.key?.fromMe) return reply.send({ ok: true })
+
+    // Extrai telefone e texto da mensagem
+    const remoteJid   = body.data?.key?.remoteJid ?? ''
+    const rawPhone    = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '')
+    const messageText = body.data?.message?.conversation
+      ?? body.data?.message?.extendedTextMessage?.text
+      ?? ''
+
+    if (!rawPhone || !messageText.trim()) return reply.send({ ok: true })
+
+    // Busca o lead pelo telefone do decisor
+    const decisionMaker = await prisma.crmDecisionMaker.findFirst({
+      where: {
+        OR: [
+          { phonePersonal: { contains: rawPhone } },
+          { phoneCompany:  { contains: rawPhone } },
+        ],
+      },
+      include: {
+        lead: {
+          include: {
+            decisionMakers: { orderBy: { isPrimary: 'desc' } },
+          },
+        },
+      },
+    })
+
+    if (!decisionMaker || !decisionMaker.lead.isActive) {
+      return reply.send({ ok: true })
+    }
+
+    const lead = decisionMaker.lead
+
+    // Busca histórico de conversas IA para este lead
+    const historyEntries = await prisma.crmStageHistory.findMany({
+      where:   { leadId: lead.id, isAiMove: true },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    // Reconstrói o histórico de conversas
+    type ConvMsg = { role: 'user' | 'assistant'; content: string }
+    const conversationHistory: ConvMsg[] = []
+    for (const entry of historyEntries) {
+      const msgs = entry.aiConversation as ConvMsg[] | null
+      if (Array.isArray(msgs)) {
+        conversationHistory.push(...msgs)
+      }
+    }
+
+    if (!crmAi.isConfigured) return reply.send({ ok: true })
+
+    // Processa com IA
+    const { reply: aiReply, nextStage, tokensUsed } = await crmAi.handleLeadReply(
+      lead,
+      messageText,
+      conversationHistory,
+    )
+
+    if (!aiReply) return reply.send({ ok: true })
+
+    // Envia a resposta da IA via WhatsApp
+    const { WhatsAppService } = await import('../services/WhatsAppService')
+    const whatsapp = new WhatsAppService()
+    const phone = decisionMaker.phonePersonal ?? decisionMaker.phoneCompany ?? ''
+    await whatsapp.sendMessage({ phone, message: aiReply })
+
+    // Atualiza conversa e avança etapa se necessário
+    const newConversation: ConvMsg[] = [
+      ...conversationHistory,
+      { role: 'user',      content: messageText },
+      { role: 'assistant', content: aiReply },
+    ]
+
+    if (nextStage && nextStage !== lead.stage) {
+      const lastInStage = await prisma.crmLead.findFirst({
+        where: { stage: nextStage }, orderBy: { position: 'desc' },
+      })
+      await prisma.$transaction([
+        prisma.crmLead.update({
+          where: { id: lead.id },
+          data:  { stage: nextStage, position: (lastInStage?.position ?? -1) + 1 },
+        }),
+        prisma.crmStageHistory.create({
+          data: {
+            leadId:         lead.id,
+            fromStage:      lead.stage,
+            toStage:        nextStage,
+            isAiMove:       true,
+            notes:          `IA avançou etapa automaticamente (${tokensUsed} tokens)`,
+            aiConversation: JSON.parse(JSON.stringify(newConversation)),
+          },
+        }),
+      ])
+    } else {
+      // Só registra a conversa sem mudar etapa
+      await prisma.crmStageHistory.create({
+        data: {
+          leadId:         lead.id,
+          fromStage:      lead.stage,
+          toStage:        lead.stage,
+          isAiMove:       true,
+          notes:          `Resposta IA (${tokensUsed} tokens)`,
+          aiConversation: JSON.parse(JSON.stringify(newConversation)),
+        },
+      })
+    }
+
+    return reply.send({ ok: true })
+  })
+
+  // ── GET /crm/ai/status — verifica se IA está configurada ─
+  app.get('/crm/ai/status', { preHandler: [authenticate] }, async (request, reply) => {
+    if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
+    return reply.send({
+      configured: crmAi.isConfigured,
+      model:      'claude-sonnet-4-6',
+    })
+  })
+}
+
+interface EvolutionWebhookPayload {
+  event:    string
+  instance: string
+  data?: {
+    key?: {
+      remoteJid?: string
+      fromMe?:    boolean
+      id?:        string
+    }
+    pushName?: string
+    message?: {
+      conversation?:          string
+      extendedTextMessage?: { text?: string }
+    }
+    messageTimestamp?: number
+  }
 }
 
 interface ApifyLead {
