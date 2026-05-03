@@ -86,10 +86,70 @@ export async function buildApp() {
   return app
 }
 
+async function ensureCrmTables() {
+  const stage = `'LEAD','PRIMEIRO_CONTATO','NIVEL_CONSCIENCIA_1','NIVEL_CONSCIENCIA_2','NIVEL_CONSCIENCIA_3','FINALIZADO','FECHADO'`
+  const tables = [
+    [`crm_products`, `CREATE TABLE IF NOT EXISTS crm_products (
+      id VARCHAR(191) NOT NULL PRIMARY KEY, name VARCHAR(191) NOT NULL,
+      description TEXT, price VARCHAR(191), video_url TEXT, features JSON,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+    [`crm_leads`, `CREATE TABLE IF NOT EXISTS crm_leads (
+      id VARCHAR(191) NOT NULL PRIMARY KEY, company_name VARCHAR(191) NOT NULL,
+      company_phone VARCHAR(191), stage ENUM(${stage}) NOT NULL DEFAULT 'LEAD',
+      position INT NOT NULL DEFAULT 0, apify_source_url VARCHAR(191), apify_raw_data JSON,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      INDEX crm_leads_stage_position_idx (stage, position)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+    [`crm_decision_makers`, `CREATE TABLE IF NOT EXISTS crm_decision_makers (
+      id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
+      name VARCHAR(191) NOT NULL, role VARCHAR(191), email VARCHAR(191),
+      phone_company VARCHAR(191), phone_personal VARCHAR(191), linkedin VARCHAR(191),
+      is_primary TINYINT(1) NOT NULL DEFAULT 0,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+    [`crm_stage_history`, `CREATE TABLE IF NOT EXISTS crm_stage_history (
+      id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
+      from_stage ENUM(${stage}), to_stage ENUM(${stage}) NOT NULL,
+      notes TEXT, is_ai_move TINYINT(1) NOT NULL DEFAULT 0, ai_conversation JSON,
+      moved_by_id VARCHAR(191),
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE,
+      FOREIGN KEY (moved_by_id) REFERENCES users(id) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+    [`crm_lead_products`, `CREATE TABLE IF NOT EXISTS crm_lead_products (
+      id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
+      product_id VARCHAR(191) NOT NULL, suggested_by_ai TINYINT(1) NOT NULL DEFAULT 0,
+      created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      UNIQUE KEY crm_lead_products_unique (lead_id, product_id),
+      FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE,
+      FOREIGN KEY (product_id) REFERENCES crm_products(id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+  ]
+  for (const [name, sql] of tables) {
+    try {
+      await prisma.$executeRawUnsafe(sql)
+      console.log(`  ✅ ${name}`)
+    } catch (err: any) {
+      console.warn(`  ⚠️  ${name}: ${err?.message ?? err}`)
+    }
+  }
+}
+
 async function start() {
   const app = await buildApp()
   try {
     await prisma.$connect()
+
+    console.log('🔄 Verificando tabelas CRM...')
+    await ensureCrmTables()
+
     await redis.connect()
     await ensureBucket().catch((err) => {
       console.warn('⚠️  MinIO/S3 unavailable at startup — file uploads disabled:', err.message)
