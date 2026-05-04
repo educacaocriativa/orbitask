@@ -362,15 +362,13 @@ export async function crmRoutes(app: FastifyInstance) {
 
     if (!rawPhone || !messageText.trim()) return reply.send({ ok: true })
 
-    // Salva mensagem recebida (independente de ter lead associado)
-    let inboundLeadId: string | null = null
-
-    // Busca o lead pelo telefone do decisor
-    const decisionMaker = await prisma.crmDecisionMaker.findFirst({
+    // Busca o lead pelo telefone do decisor — normaliza ambos os lados
+    // (DB pode ter "+55 11 99999-9999", "(11) 99999-9999", etc.)
+    const candidates = await prisma.crmDecisionMaker.findMany({
       where: {
         OR: [
-          { phonePersonal: { contains: rawPhone } },
-          { phoneCompany:  { contains: rawPhone } },
+          { phonePersonal: { not: null } },
+          { phoneCompany:  { not: null } },
         ],
       },
       include: {
@@ -382,12 +380,24 @@ export async function crmRoutes(app: FastifyInstance) {
       },
     })
 
+    const matchPhone = (raw: string | null | undefined) => {
+      const digits = (raw ?? '').replace(/\D/g, '')
+      if (!digits) return false
+      // Compara pelos últimos 10 dígitos para tolerar prefixo de país opcional
+      const a = digits.slice(-10)
+      const b = rawPhone.slice(-10)
+      return a.length >= 8 && b.length >= 8 && a === b
+    }
+
+    const decisionMaker = candidates.find(
+      (dm) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany)
+    )
+
     if (!decisionMaker || !decisionMaker.lead.isActive) {
       return reply.send({ ok: true })
     }
 
     const lead = decisionMaker.lead
-    inboundLeadId = lead.id
 
     // Salva mensagem recebida
     await (prisma as any).crmMessage?.create({

@@ -110,20 +110,27 @@ curl -X POST http://localhost:8080/message/sendText/orbitask \
 
 ---
 
-## 6. Configurar webhook (opcional)
+## 6. Configurar webhook (obrigatório para o CRM receber respostas)
 
-Para receber confirmações de entrega:
+O CRM só consegue exibir as respostas dos leads no chat se a Evolution API
+encaminhar o evento `messages.upsert` para o backend Orbitask.
+
+A URL precisa incluir o `secret` (valor da env `CRM_WEBHOOK_SECRET` no backend)
+como query param — sem ele a rota retorna 401.
 
 ```bash
 curl -X POST http://localhost:8080/webhook/set/orbitask \
   -H "apikey: SUA_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "url": "https://seu-dominio.com/api/webhooks/whatsapp",
-    "webhook_by_events": true,
-    "events": ["MESSAGES_UPSERT", "SEND_MESSAGE", "CONNECTION_UPDATE"]
+    "url": "https://seu-dominio.com/crm/webhook/whatsapp?secret=SEU_CRM_WEBHOOK_SECRET",
+    "webhook_by_events": false,
+    "events": ["MESSAGES_UPSERT"]
   }'
 ```
+
+> Use `webhook_by_events: false` para que todos os eventos batem na mesma URL
+> (a rota `/crm/webhook/whatsapp` filtra internamente por `event === 'messages.upsert'`).
 
 ---
 

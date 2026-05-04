@@ -311,7 +311,10 @@ function LeadModal({ leadId, onClose, onUpdated }: {
   }, [leadId])
 
   useEffect(() => {
-    if (tab === 'mensagens') loadMessages()
+    if (tab !== 'mensagens') return
+    loadMessages()
+    const id = setInterval(loadMessages, 5000)
+    return () => clearInterval(id)
   }, [tab, loadMessages])
 
   async function sendMessage() {
