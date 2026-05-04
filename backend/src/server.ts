@@ -108,6 +108,9 @@ async function ensureCrmTables() {
     [`crm_leads.segment (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS segment VARCHAR(191) NULL`],
     [`users.crm_access (migration)`, `ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_access TINYINT(1) NOT NULL DEFAULT 0`],
     [`crm_leads.company_website (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS company_website TEXT NULL`],
+    [`boards.is_archived (migration)`, `ALTER TABLE boards ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
+    [`columns.is_archived (migration)`, `ALTER TABLE columns ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
+    [`cards.is_archived (migration)`, `ALTER TABLE cards ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
     [`crm_messages`, `CREATE TABLE IF NOT EXISTS crm_messages (
       id VARCHAR(191) NOT NULL PRIMARY KEY,
       lead_id VARCHAR(191) NOT NULL,
