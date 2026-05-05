@@ -364,8 +364,8 @@ export async function crmRoutes(app: FastifyInstance) {
         : [(body as any).data].filter(Boolean)
 
       for (const item of updates) {
-        const messageId = item?.key?.id
-        const remoteJid = item?.key?.remoteJid
+        const messageId = item?.keyId ?? item?.key?.id
+        const remoteJid = item?.remoteJid ?? item?.key?.remoteJid
         if (!messageId || !remoteJid?.endsWith('@lid')) continue
 
         const sentMessage = await (prisma as any).crmMessage.findFirst({
