@@ -348,24 +348,37 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     const body = request.body as EvolutionWebhookPayload
+    console.log('[CRM-WH] event=%s instance=%s fromMe=%s', body.event, body.instance, body.data?.key?.fromMe)
 
     // Ignora mensagens enviadas por nós (fromMe) e eventos que não são mensagens
     if (body.event !== 'messages.upsert') return reply.send({ ok: true })
     if (body.data?.key?.fromMe) return reply.send({ ok: true })
 
-    // Extrai telefone e texto da mensagem
+    // Extrai dados da mensagem
     const remoteJid   = body.data?.key?.remoteJid ?? ''
-    const rawPhone    = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '')
+    const isLid       = remoteJid.endsWith('@lid')
+    const rawPhone    = isLid ? '' : remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '')
+    const pushName    = body.data?.pushName ?? ''
     const messageText = body.data?.message?.conversation
       ?? body.data?.message?.extendedTextMessage?.text
       ?? ''
 
-    if (!rawPhone || !messageText.trim()) return reply.send({ ok: true })
+    console.log('[CRM-WH] remoteJid=%s isLid=%s rawPhone=%s pushName="%s" textLen=%d',
+      remoteJid, isLid, rawPhone || '-', pushName, messageText.length)
 
-    // Busca o lead pelo telefone do decisor — normaliza ambos os lados
-    // (DB pode ter "+55 11 99999-9999", "(11) 99999-9999", etc.)
+    if (!messageText.trim()) {
+      console.log('[CRM-WH] skip: mensagem vazia')
+      return reply.send({ ok: true })
+    }
+    if (!rawPhone && !pushName.trim()) {
+      console.log('[CRM-WH] skip: sem telefone nem pushName')
+      return reply.send({ ok: true })
+    }
+
+    // Carrega candidatos com lead ativo
     const candidates = await prisma.crmDecisionMaker.findMany({
       where: {
+        lead: { isActive: true },
         OR: [
           { phonePersonal: { not: null } },
           { phoneCompany:  { not: null } },
@@ -380,20 +393,60 @@ export async function crmRoutes(app: FastifyInstance) {
       },
     })
 
+    // Estratégia 1: matching por telefone (formato tradicional @s.whatsapp.net)
+    // Compara pelos últimos 10 dígitos pra tolerar prefixos de país, espaços, etc.
     const matchPhone = (raw: string | null | undefined) => {
       const digits = (raw ?? '').replace(/\D/g, '')
-      if (!digits) return false
-      // Compara pelos últimos 10 dígitos para tolerar prefixo de país opcional
+      if (!digits || !rawPhone) return false
       const a = digits.slice(-10)
       const b = rawPhone.slice(-10)
       return a.length >= 8 && b.length >= 8 && a === b
     }
 
-    const decisionMaker = candidates.find(
+    // Estratégia 2: matching por pushName (quando WhatsApp envia @lid e oculta o telefone)
+    // Normaliza removendo acentos/case e checa se cada token do pushName aparece no nome do decisor.
+    const normalize = (s: string) => s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+
+    const matchName = (raw: string | null | undefined) => {
+      if (!pushName.trim() || !raw) return false
+      const target = normalize(raw)
+      const tokens = normalize(pushName).split(' ').filter((t) => t.length >= 3)
+      if (tokens.length === 0) return false
+      return tokens.every((t) => target.includes(t))
+    }
+
+    console.log('[CRM-WH] candidatos carregados: %d decisor(es) com telefone', candidates.length)
+
+    let decisionMaker = candidates.find(
       (dm) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany)
     )
+    if (decisionMaker) {
+      console.log('[CRM-WH] match por TELEFONE → decisor="%s" leadId=%s',
+        decisionMaker.name, decisionMaker.lead.id)
+    }
+
+    // Fallback para LID — usa pushName se telefone não casou
+    if (!decisionMaker && (isLid || !rawPhone)) {
+      const nameMatches = candidates.filter((dm) => matchName(dm.name))
+      console.log('[CRM-WH] tentando match por NOME (pushName="%s") → %d candidato(s) bateram: [%s]',
+        pushName, nameMatches.length, nameMatches.map((d: { name: string }) => d.name).join(', '))
+      if (nameMatches.length === 1) {
+        decisionMaker = nameMatches[0]
+        console.log('[CRM-WH] match por NOME → decisor="%s" leadId=%s',
+          decisionMaker.name, decisionMaker.lead.id)
+      } else if (nameMatches.length > 1) {
+        console.log('[CRM-WH] skip: ambiguidade em pushName, %d decisores casam', nameMatches.length)
+      }
+    }
 
     if (!decisionMaker || !decisionMaker.lead.isActive) {
+      console.log('[CRM-WH] DESCARTADO: nenhum decisor ativo encontrado (rawPhone=%s pushName="%s")', rawPhone || '-', pushName)
       return reply.send({ ok: true })
     }
 
