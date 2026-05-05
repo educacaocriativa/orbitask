@@ -375,14 +375,11 @@ export async function crmRoutes(app: FastifyInstance) {
       return reply.send({ ok: true })
     }
 
-    // Carrega candidatos com lead ativo
+    // Carrega todos os decisores de leads ativos. Quando o WhatsApp manda @lid,
+    // o telefone fica oculto, entao o fallback por nome/JID precisa ver todos.
     const candidates = await prisma.crmDecisionMaker.findMany({
       where: {
         lead: { isActive: true },
-        OR: [
-          { phonePersonal: { not: null } },
-          { phoneCompany:  { not: null } },
-        ],
       },
       include: {
         lead: {
@@ -403,45 +400,70 @@ export async function crmRoutes(app: FastifyInstance) {
       return a.length >= 8 && b.length >= 8 && a === b
     }
 
+    const matchJid = (raw: string | null | undefined) => !!raw && raw === remoteJid
+
     // Estratégia 2: matching por pushName (quando WhatsApp envia @lid e oculta o telefone)
     // Normaliza removendo acentos/case e checa se cada token do pushName aparece no nome do decisor.
     const normalize = (s: string) => s
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
+      .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9 ]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
 
-    const matchName = (raw: string | null | undefined) => {
-      if (!pushName.trim() || !raw) return false
+    // Conta quantos tokens do pushName aparecem no nome do decisor.
+    // Quanto mais alto, melhor o match. 0 = nada bateu.
+    const scoreName = (raw: string | null | undefined): number => {
+      if (!pushName.trim() || !raw) return 0
       const target = normalize(raw)
       const tokens = normalize(pushName).split(' ').filter((t) => t.length >= 3)
-      if (tokens.length === 0) return false
-      return tokens.every((t) => target.includes(t))
+      if (tokens.length === 0) return 0
+      return tokens.filter((t) => target.includes(t)).length
     }
 
-    console.log('[CRM-WH] candidatos carregados: %d decisor(es) com telefone', candidates.length)
+    console.log('[CRM-WH] candidatos carregados: %d decisor(es)', candidates.length)
 
     let decisionMaker = candidates.find(
-      (dm) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany)
+      (dm) => matchJid((dm as any).whatsappJid)
+    )
+    if (decisionMaker) {
+      console.log('[CRM-WH] match por JID â†’ decisor="%s" leadId=%s',
+        decisionMaker.name, decisionMaker.lead.id)
+    }
+
+    decisionMaker ??= candidates.find(
+      (dm) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany) || matchPhone(dm.lead.companyPhone)
     )
     if (decisionMaker) {
       console.log('[CRM-WH] match por TELEFONE → decisor="%s" leadId=%s',
         decisionMaker.name, decisionMaker.lead.id)
     }
 
-    // Fallback para LID — usa pushName se telefone não casou
+    // Fallback para LID/sem-telefone — usa pushName e ranqueia
     if (!decisionMaker && (isLid || !rawPhone)) {
-      const nameMatches = candidates.filter((dm) => matchName(dm.name))
-      console.log('[CRM-WH] tentando match por NOME (pushName="%s") → %d candidato(s) bateram: [%s]',
-        pushName, nameMatches.length, nameMatches.map((d: { name: string }) => d.name).join(', '))
-      if (nameMatches.length === 1) {
-        decisionMaker = nameMatches[0]
+      type Candidate = (typeof candidates)[number]
+      const scored = candidates
+        .map((dm: Candidate) => ({ dm, score: scoreName(dm.name) }))
+        .filter((s: { dm: Candidate; score: number }) => s.score > 0)
+        .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
+
+      console.log('[CRM-WH] tentando match por NOME (pushName="%s") → ranking: [%s]',
+        pushName,
+        scored.map((s: { dm: Candidate; score: number }) => `${s.dm.name}=${s.score}`).join(', ') || 'vazio')
+
+      // Aceita se o top tem score estritamente maior que o segundo (winner único)
+      if (scored.length === 1) {
+        decisionMaker = scored[0].dm
+      } else if (scored.length > 1 && scored[0].score > scored[1].score) {
+        decisionMaker = scored[0].dm
+      }
+
+      if (decisionMaker) {
         console.log('[CRM-WH] match por NOME → decisor="%s" leadId=%s',
           decisionMaker.name, decisionMaker.lead.id)
-      } else if (nameMatches.length > 1) {
-        console.log('[CRM-WH] skip: ambiguidade em pushName, %d decisores casam', nameMatches.length)
+      } else if (scored.length > 1) {
+        console.log('[CRM-WH] skip: empate de %d decisores com mesmo score', scored.length)
       }
     }
 
@@ -452,6 +474,13 @@ export async function crmRoutes(app: FastifyInstance) {
 
     const lead = decisionMaker.lead
 
+    if (remoteJid && (decisionMaker as any).whatsappJid !== remoteJid) {
+      await (prisma as any).crmDecisionMaker.update({
+        where: { id: decisionMaker.id },
+        data:  { whatsappJid: remoteJid },
+      })
+    }
+
     // Salva mensagem recebida
     await (prisma as any).crmMessage?.create({
       data: {
@@ -459,6 +488,7 @@ export async function crmRoutes(app: FastifyInstance) {
         direction:  'INBOUND',
         content:    messageText,
         senderName: decisionMaker.name,
+        whatsappRemoteJid: remoteJid || null,
       },
     })
 

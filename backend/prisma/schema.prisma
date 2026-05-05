@@ -502,6 +502,7 @@ model CrmMessage {
   content      String   @db.Text
   sentBy       String?  @map("sent_by")  // 'AI' | 'HUMAN' | null (inbound)
   senderName   String?  @map("sender_name")
+  whatsappRemoteJid String? @map("whatsapp_remote_jid")
   sentByUserId String?  @map("sent_by_user_id")
   sentByUser   User?    @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
 
@@ -521,6 +522,7 @@ model CrmDecisionMaker {
   email         String?
   phoneCompany  String?  @map("phone_company")
   phonePersonal String?  @map("phone_personal")
+  whatsappJid   String?  @map("whatsapp_jid")
   linkedin      String?
   isPrimary     Boolean  @default(false) @map("is_primary")
 

@@ -118,21 +118,24 @@ async function ensureCrmTables() {
       content LONGTEXT NOT NULL,
       sent_by VARCHAR(16),
       sender_name VARCHAR(191),
+      whatsapp_remote_jid VARCHAR(191),
       sent_by_user_id VARCHAR(191),
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
       INDEX crm_messages_lead_idx (lead_id, created_at),
       FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE,
       FOREIGN KEY (sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+    [`crm_messages.whatsapp_remote_jid (migration)`, `ALTER TABLE crm_messages ADD COLUMN IF NOT EXISTS whatsapp_remote_jid VARCHAR(191) NULL`],
     [`crm_decision_makers`, `CREATE TABLE IF NOT EXISTS crm_decision_makers (
       id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
       name VARCHAR(191) NOT NULL, role VARCHAR(191), email VARCHAR(191),
-      phone_company VARCHAR(191), phone_personal VARCHAR(191), linkedin VARCHAR(191),
+      phone_company VARCHAR(191), phone_personal VARCHAR(191), whatsapp_jid VARCHAR(191), linkedin VARCHAR(191),
       is_primary TINYINT(1) NOT NULL DEFAULT 0,
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
       updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
       FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
+    [`crm_decision_makers.whatsapp_jid (migration)`, `ALTER TABLE crm_decision_makers ADD COLUMN IF NOT EXISTS whatsapp_jid VARCHAR(191) NULL`],
     [`crm_stage_history`, `CREATE TABLE IF NOT EXISTS crm_stage_history (
       id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
       from_stage ENUM(${stage}), to_stage ENUM(${stage}) NOT NULL,
