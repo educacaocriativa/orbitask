@@ -15,6 +15,9 @@ interface BoardManagerProps {
   editBoard?: {
     id: string; title: string; color: string; description?: string
     memberIds: string[]; coordinatorIds?: string[]
+    /** Optional: pre-resolved members with full info — avoids losing members
+     *  that fall outside the first 20 results of /users (which is paginated). */
+    members?: ApiUser[]
   } | null
   onSaved?: (board: any) => void
 }
@@ -51,6 +54,12 @@ export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardMa
       setDescription(editBoard.description ?? '')
       setColor(editBoard.color)
       setCoordinatorIds(new Set(editBoard.coordinatorIds ?? []))
+      // Use pre-resolved members when available to avoid losing entries beyond
+      // the first 20 results of /users
+      if (editBoard.members && editBoard.members.length > 0) {
+        setMembers(editBoard.members)
+        setPopulated(true)
+      }
     } else {
       setTitle(''); setDescription(''); setColor('#7c3aed'); setMembers([]); setCoordinatorIds(new Set())
     }

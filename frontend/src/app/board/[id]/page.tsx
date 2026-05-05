@@ -303,6 +303,12 @@ export default function BoardPage() {
             description:    board.description,
             memberIds:      board.members.map((m) => m.userId),
             coordinatorIds: board.members.filter((m) => m.role === 'COORDINATOR').map((m) => m.userId),
+            members:        board.members.map((m) => ({
+              id:        m.user.id,
+              name:      m.user.name,
+              email:     m.user.email ?? '',
+              avatarUrl: m.user.avatarUrl,
+            })),
           }}
           onSaved={() => fetchBoard(boardId)}
         />
