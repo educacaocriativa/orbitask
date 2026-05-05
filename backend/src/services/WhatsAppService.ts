@@ -17,6 +17,12 @@ interface SendMessageParams {
   message: string
 }
 
+interface SendMessageResult {
+  success: boolean
+  messageId?: string
+  remoteJid?: string
+}
+
 export class WhatsAppService {
   private instance = env.EVOLUTION_INSTANCE
 
@@ -39,6 +45,28 @@ export class WhatsAppService {
   }
 
   // ── Message Templates ───────────────────────────────────
+
+  async sendMessageWithResult({ phone, message }: SendMessageParams): Promise<SendMessageResult> {
+    try {
+      const cleanPhone = phone.replace(/\D/g, '')
+
+      const response = await evolutionClient.post(`/message/sendText/${this.instance}`, {
+        number: cleanPhone,
+        text: message,
+        delay: 1000,
+      })
+
+      const payload = response.data as any
+      return {
+        success: true,
+        messageId: payload?.key?.id ?? payload?.message?.key?.id ?? payload?.data?.key?.id,
+        remoteJid: payload?.key?.remoteJid ?? payload?.message?.key?.remoteJid ?? payload?.data?.key?.remoteJid,
+      }
+    } catch (error) {
+      console.error(`WhatsApp send failed to ${phone}:`, error)
+      return { success: false }
+    }
+  }
 
   async notifyCardMoved(params: {
     recipientPhone: string

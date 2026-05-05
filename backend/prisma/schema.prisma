@@ -472,6 +472,7 @@ model CrmLead {
   companyName    String    @map("company_name")
   companyPhone   String?   @map("company_phone")
   companyWebsite String?   @map("company_website") @db.Text
+  whatsappJid    String?   @map("whatsapp_jid")
   segment        String?
   stage          CrmStage  @default(LEAD)
   position       Int       @default(0)
@@ -503,6 +504,7 @@ model CrmMessage {
   sentBy       String?  @map("sent_by")  // 'AI' | 'HUMAN' | null (inbound)
   senderName   String?  @map("sender_name")
   whatsappRemoteJid String? @map("whatsapp_remote_jid")
+  whatsappMessageId String? @map("whatsapp_message_id")
   sentByUserId String?  @map("sent_by_user_id")
   sentByUser   User?    @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
 

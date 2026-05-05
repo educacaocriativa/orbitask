@@ -125,12 +125,13 @@ curl -X POST http://localhost:8080/webhook/set/orbitask \
   -d '{
     "url": "https://seu-dominio.com/crm/webhook/whatsapp?secret=SEU_CRM_WEBHOOK_SECRET",
     "webhook_by_events": false,
-    "events": ["MESSAGES_UPSERT"]
+    "events": ["MESSAGES_UPSERT", "MESSAGES_UPDATE"]
   }'
 ```
 
 > Use `webhook_by_events: false` para que todos os eventos batem na mesma URL
-> (a rota `/crm/webhook/whatsapp` filtra internamente por `event === 'messages.upsert'`).
+> (a rota `/crm/webhook/whatsapp` usa `messages.upsert` para respostas recebidas e
+> `messages.update` para vincular o `@lid` do WhatsApp ao lead depois do envio).
 
 ---
 

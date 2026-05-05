@@ -189,7 +189,7 @@ export class CrmAiService {
     decisionMaker: DecisionMaker,
     products:      Product[] = [],
     skills:        Skill[]   = [],
-  ): Promise<string | null> {
+  ): Promise<{ message: string; whatsappMessageId?: string; whatsappRemoteJid?: string } | null> {
     if (!this.client) return null
 
     // Tenta telefone do decisor, depois da empresa
@@ -244,8 +244,12 @@ REGRAS OBRIGATÓRIAS para esta primeira mensagem:
         return null
       }
 
-      await this.whatsapp.sendMessage({ phone, message: result.reply })
-      return result.reply
+      const sendResult = await this.whatsapp.sendMessageWithResult({ phone, message: result.reply })
+      return {
+        message: result.reply,
+        whatsappMessageId: sendResult.messageId,
+        whatsappRemoteJid: sendResult.remoteJid ?? `${phone.replace(/\D/g, '')}@s.whatsapp.net`,
+      }
     } catch (err: any) {
       console.error('[CrmAI] sendFirstMessage error:', err?.message ?? err)
       console.error('[CrmAI] detalhes:', JSON.stringify(err?.error ?? err?.status ?? ''))

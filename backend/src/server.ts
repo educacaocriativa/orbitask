@@ -98,7 +98,7 @@ async function ensureCrmTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
     [`crm_leads`, `CREATE TABLE IF NOT EXISTS crm_leads (
       id VARCHAR(191) NOT NULL PRIMARY KEY, company_name VARCHAR(191) NOT NULL,
-      company_phone VARCHAR(191), segment VARCHAR(191), stage ENUM(${stage}) NOT NULL DEFAULT 'LEAD',
+      company_phone VARCHAR(191), company_website TEXT, whatsapp_jid VARCHAR(191), segment VARCHAR(191), stage ENUM(${stage}) NOT NULL DEFAULT 'LEAD',
       position INT NOT NULL DEFAULT 0, apify_source_url VARCHAR(191), apify_raw_data JSON,
       is_active TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -108,6 +108,7 @@ async function ensureCrmTables() {
     [`crm_leads.segment (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS segment VARCHAR(191) NULL`],
     [`users.crm_access (migration)`, `ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_access TINYINT(1) NOT NULL DEFAULT 0`],
     [`crm_leads.company_website (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS company_website TEXT NULL`],
+    [`crm_leads.whatsapp_jid (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS whatsapp_jid VARCHAR(191) NULL`],
     [`boards.is_archived (migration)`, `ALTER TABLE boards ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
     [`columns.is_archived (migration)`, `ALTER TABLE columns ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
     [`cards.is_archived (migration)`, `ALTER TABLE cards ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
@@ -119,6 +120,7 @@ async function ensureCrmTables() {
       sent_by VARCHAR(16),
       sender_name VARCHAR(191),
       whatsapp_remote_jid VARCHAR(191),
+      whatsapp_message_id VARCHAR(191),
       sent_by_user_id VARCHAR(191),
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
       INDEX crm_messages_lead_idx (lead_id, created_at),
@@ -126,6 +128,7 @@ async function ensureCrmTables() {
       FOREIGN KEY (sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
     [`crm_messages.whatsapp_remote_jid (migration)`, `ALTER TABLE crm_messages ADD COLUMN IF NOT EXISTS whatsapp_remote_jid VARCHAR(191) NULL`],
+    [`crm_messages.whatsapp_message_id (migration)`, `ALTER TABLE crm_messages ADD COLUMN IF NOT EXISTS whatsapp_message_id VARCHAR(191) NULL`],
     [`crm_decision_makers`, `CREATE TABLE IF NOT EXISTS crm_decision_makers (
       id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
       name VARCHAR(191) NOT NULL, role VARCHAR(191), email VARCHAR(191),

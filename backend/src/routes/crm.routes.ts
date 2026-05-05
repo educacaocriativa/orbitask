@@ -184,7 +184,15 @@ export async function crmRoutes(app: FastifyInstance) {
           const msg = await crmAi.sendFirstMessage(fullLead, primary, products, skills)
           if (msg) {
             await (prisma as any).crmMessage?.create({
-              data: { leadId: id, direction: 'OUTBOUND', content: msg, sentBy: 'AI', senderName: 'IA Comercial' },
+              data: {
+                leadId: id,
+                direction: 'OUTBOUND',
+                content: msg.message,
+                sentBy: 'AI',
+                senderName: 'IA Comercial',
+                whatsappRemoteJid: msg.whatsappRemoteJid ?? null,
+                whatsappMessageId: msg.whatsappMessageId ?? null,
+              },
             })
             await prisma.crmStageHistory.create({
               data: {
@@ -194,7 +202,7 @@ export async function crmRoutes(app: FastifyInstance) {
                 isAiMove:      true,
                 notes:         'Primeira mensagem enviada pela IA',
                 aiConversation: JSON.parse(JSON.stringify([
-                  { role: 'assistant', content: msg },
+                  { role: 'assistant', content: msg.message },
                 ])),
               },
             })
@@ -350,6 +358,52 @@ export async function crmRoutes(app: FastifyInstance) {
     const body = request.body as EvolutionWebhookPayload
     console.log('[CRM-WH] event=%s instance=%s fromMe=%s', body.event, body.instance, body.data?.key?.fromMe)
 
+    if (body.event === 'messages.update') {
+      const updates = Array.isArray((body as any).data)
+        ? (body as any).data
+        : [(body as any).data].filter(Boolean)
+
+      for (const item of updates) {
+        const messageId = item?.key?.id
+        const remoteJid = item?.key?.remoteJid
+        if (!messageId || !remoteJid?.endsWith('@lid')) continue
+
+        const sentMessage = await (prisma as any).crmMessage.findFirst({
+          where: { whatsappMessageId: messageId, direction: 'OUTBOUND' },
+          include: {
+            lead: {
+              include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+            },
+          },
+        })
+        if (!sentMessage?.lead) continue
+
+        await (prisma as any).crmLead.update({
+          where: { id: sentMessage.leadId },
+          data:  { whatsappJid: remoteJid },
+        })
+
+        const sentToDigits = (sentMessage.whatsappRemoteJid ?? '').replace(/\D/g, '')
+        const decisionMaker = sentMessage.lead.decisionMakers.find((dm: any) => {
+          const personal = (dm.phonePersonal ?? '').replace(/\D/g, '')
+          const company  = (dm.phoneCompany ?? '').replace(/\D/g, '')
+          return sentToDigits && (personal.endsWith(sentToDigits.slice(-10)) || company.endsWith(sentToDigits.slice(-10)))
+        }) ?? sentMessage.lead.decisionMakers[0]
+
+        if (decisionMaker) {
+          await (prisma as any).crmDecisionMaker.update({
+            where: { id: decisionMaker.id },
+            data:  { whatsappJid: remoteJid },
+          })
+        }
+
+        console.log('[CRM-WH] vinculado LID por UPDATE messageId=%s leadId=%s remoteJid=%s',
+          messageId, sentMessage.leadId, remoteJid)
+      }
+
+      return reply.send({ ok: true })
+    }
+
     // Ignora mensagens enviadas por nós (fromMe) e eventos que não são mensagens
     if (body.event !== 'messages.upsert') return reply.send({ ok: true })
     if (body.data?.key?.fromMe) return reply.send({ ok: true })
@@ -467,18 +521,34 @@ export async function crmRoutes(app: FastifyInstance) {
       }
     }
 
-    if (!decisionMaker || !decisionMaker.lead.isActive) {
-      console.log('[CRM-WH] DESCARTADO: nenhum decisor ativo encontrado (rawPhone=%s pushName="%s")', rawPhone || '-', pushName)
+    let lead = decisionMaker?.lead
+
+    if (!lead && remoteJid) {
+      lead = await (prisma as any).crmLead.findFirst({
+        where: { isActive: true, whatsappJid: remoteJid },
+        include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+      })
+      if (lead) {
+        decisionMaker = lead.decisionMakers[0]
+          ? ({ ...lead.decisionMakers[0], lead } as any)
+          : undefined
+        console.log('[CRM-WH] match por JID do LEAD â†’ leadId=%s', lead.id)
+      }
+    }
+
+    if (!lead || !lead.isActive) {
+      console.log('[CRM-WH] DESCARTADO: nenhum lead/decisor ativo encontrado (rawPhone=%s pushName="%s" remoteJid=%s)', rawPhone || '-', pushName, remoteJid || '-')
       return reply.send({ ok: true })
     }
 
-    const lead = decisionMaker.lead
-
-    if (remoteJid && (decisionMaker as any).whatsappJid !== remoteJid) {
-      await (prisma as any).crmDecisionMaker.update({
-        where: { id: decisionMaker.id },
-        data:  { whatsappJid: remoteJid },
-      })
+    if (remoteJid && (!decisionMaker || (decisionMaker as any).whatsappJid !== remoteJid)) {
+      await (prisma as any).crmLead.update({ where: { id: lead.id }, data: { whatsappJid: remoteJid } })
+      if (decisionMaker) {
+        await (prisma as any).crmDecisionMaker.update({
+          where: { id: decisionMaker.id },
+          data:  { whatsappJid: remoteJid },
+        })
+      }
     }
 
     // Salva mensagem recebida
@@ -487,7 +557,7 @@ export async function crmRoutes(app: FastifyInstance) {
         leadId:     lead.id,
         direction:  'INBOUND',
         content:    messageText,
-        senderName: decisionMaker.name,
+        senderName: decisionMaker?.name ?? pushName || lead.companyName,
         whatsappRemoteJid: remoteJid || null,
       },
     })
@@ -525,8 +595,10 @@ export async function crmRoutes(app: FastifyInstance) {
     // Envia a resposta da IA via WhatsApp
     const { WhatsAppService } = await import('../services/WhatsAppService')
     const whatsapp = new WhatsAppService()
-    const phone = decisionMaker.phonePersonal ?? decisionMaker.phoneCompany ?? ''
-    await whatsapp.sendMessage({ phone, message: aiReply })
+    const phone = decisionMaker?.phonePersonal ?? decisionMaker?.phoneCompany ?? lead.companyPhone ?? ''
+    if (!phone) return reply.send({ ok: true })
+    const sendResult = await whatsapp.sendMessageWithResult({ phone, message: aiReply })
+    const cleanPhone = phone.replace(/\D/g, '')
 
     // Salva mensagem enviada pela IA
     await (prisma as any).crmMessage?.create({
@@ -536,6 +608,8 @@ export async function crmRoutes(app: FastifyInstance) {
         content:   aiReply,
         sentBy:    'AI',
         senderName: 'IA Comercial',
+        whatsappRemoteJid: sendResult.remoteJid ?? `${cleanPhone}@s.whatsapp.net`,
+        whatsappMessageId: sendResult.messageId ?? null,
       },
     })
 
@@ -633,7 +707,8 @@ export async function crmRoutes(app: FastifyInstance) {
     // Envia via WhatsApp
     const { WhatsAppService } = await import('../services/WhatsAppService')
     const whatsapp = new WhatsAppService()
-    await whatsapp.sendMessage({ phone, message: content.trim() })
+    const sendResult = await whatsapp.sendMessageWithResult({ phone, message: content.trim() })
+    const cleanPhone = phone.replace(/\D/g, '')
 
     // Salva mensagem
     const message = await (prisma as any).crmMessage.create({
@@ -644,6 +719,8 @@ export async function crmRoutes(app: FastifyInstance) {
         sentBy:      'HUMAN',
         senderName:  request.user.name,
         sentByUserId: request.user.id,
+        whatsappRemoteJid: sendResult.remoteJid ?? `${cleanPhone}@s.whatsapp.net`,
+        whatsappMessageId: sendResult.messageId ?? null,
       },
     })
 
@@ -683,7 +760,15 @@ export async function crmRoutes(app: FastifyInstance) {
     // Salva como mensagem e no histórico
     await Promise.all([
       (prisma as any).crmMessage?.create({
-        data: { leadId: id, direction: 'OUTBOUND', content: msg, sentBy: 'AI', senderName: 'IA Comercial' },
+        data: {
+          leadId: id,
+          direction: 'OUTBOUND',
+          content: msg.message,
+          sentBy: 'AI',
+          senderName: 'IA Comercial',
+          whatsappRemoteJid: msg.whatsappRemoteJid ?? null,
+          whatsappMessageId: msg.whatsappMessageId ?? null,
+        },
       }),
       prisma.crmStageHistory.create({
         data: {
@@ -692,12 +777,12 @@ export async function crmRoutes(app: FastifyInstance) {
           toStage:    lead.stage,
           isAiMove:   true,
           notes:      'Primeira mensagem enviada manualmente pela IA',
-          aiConversation: JSON.parse(JSON.stringify([{ role: 'assistant', content: msg }])),
+          aiConversation: JSON.parse(JSON.stringify([{ role: 'assistant', content: msg.message }])),
         },
       }),
     ])
 
-    return reply.send({ ok: true, message: msg })
+    return reply.send({ ok: true, message: msg.message })
   })
 
   // ── GET /crm/ai/status — verifica se IA está configurada ─
