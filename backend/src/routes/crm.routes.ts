@@ -358,6 +358,12 @@ export async function crmRoutes(app: FastifyInstance) {
     const body = request.body as EvolutionWebhookPayload
     console.log('[CRM-WH] event=%s instance=%s fromMe=%s', body.event, body.instance, body.data?.key?.fromMe)
 
+    const normalizeWhatsAppJid = (jid: string | null | undefined) => {
+      const value = (jid ?? '').trim()
+      const match = value.match(/^([^@:]+)(?::\d+)?@(lid|s\.whatsapp\.net)$/)
+      return match ? `${match[1]}@${match[2]}` : value
+    }
+
     if (body.event === 'messages.update') {
       const updates = Array.isArray((body as any).data)
         ? (body as any).data
@@ -365,7 +371,7 @@ export async function crmRoutes(app: FastifyInstance) {
 
       for (const item of updates) {
         const messageId = item?.keyId ?? item?.key?.id
-        const remoteJid = item?.remoteJid ?? item?.key?.remoteJid
+        const remoteJid = normalizeWhatsAppJid(item?.remoteJid ?? item?.key?.remoteJid)
         if (!messageId || !remoteJid?.endsWith('@lid')) continue
 
         const sentMessage = await (prisma as any).crmMessage.findFirst({
@@ -409,7 +415,7 @@ export async function crmRoutes(app: FastifyInstance) {
     if (body.data?.key?.fromMe) return reply.send({ ok: true })
 
     // Extrai dados da mensagem
-    const remoteJid   = body.data?.key?.remoteJid ?? ''
+    const remoteJid   = normalizeWhatsAppJid(body.data?.key?.remoteJid)
     const isLid       = remoteJid.endsWith('@lid')
     const rawPhone    = isLid ? '' : remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '')
     const pushName    = body.data?.pushName ?? ''
@@ -454,7 +460,7 @@ export async function crmRoutes(app: FastifyInstance) {
       return a.length >= 8 && b.length >= 8 && a === b
     }
 
-    const matchJid = (raw: string | null | undefined) => !!raw && raw === remoteJid
+    const matchJid = (raw: string | null | undefined) => !!raw && normalizeWhatsAppJid(raw) === remoteJid
 
     // Estratégia 2: matching por pushName (quando WhatsApp envia @lid e oculta o telefone)
     // Normaliza removendo acentos/case e checa se cada token do pushName aparece no nome do decisor.
