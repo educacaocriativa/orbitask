@@ -370,12 +370,17 @@ export async function crmRoutes(app: FastifyInstance) {
         : [(body as any).data].filter(Boolean)
 
       for (const item of updates) {
-        const messageId = item?.keyId ?? item?.key?.id
+        const keyId = item?.keyId ?? item?.key?.id
+        const messageId = item?.messageId ?? item?.id
         const remoteJid = normalizeWhatsAppJid(item?.remoteJid ?? item?.key?.remoteJid)
-        if (!messageId || !remoteJid?.endsWith('@lid')) continue
+        const possibleMessageIds = [keyId, messageId].filter(Boolean)
+        if (possibleMessageIds.length === 0 || !remoteJid?.endsWith('@lid')) continue
 
         const sentMessage = await (prisma as any).crmMessage.findFirst({
-          where: { whatsappMessageId: messageId, direction: 'OUTBOUND' },
+          where: {
+            direction: 'OUTBOUND',
+            whatsappMessageId: { in: possibleMessageIds },
+          },
           include: {
             lead: {
               include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
@@ -404,7 +409,7 @@ export async function crmRoutes(app: FastifyInstance) {
         }
 
         console.log('[CRM-WH] vinculado LID por UPDATE messageId=%s leadId=%s remoteJid=%s',
-          messageId, sentMessage.leadId, remoteJid)
+          possibleMessageIds.join('|'), sentMessage.leadId, remoteJid)
       }
 
       return reply.send({ ok: true })

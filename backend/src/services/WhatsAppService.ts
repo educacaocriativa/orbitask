@@ -59,8 +59,20 @@ export class WhatsAppService {
       const payload = response.data as any
       return {
         success: true,
-        messageId: payload?.key?.id ?? payload?.message?.key?.id ?? payload?.data?.key?.id,
-        remoteJid: payload?.key?.remoteJid ?? payload?.message?.key?.remoteJid ?? payload?.data?.key?.remoteJid,
+        messageId: payload?.key?.id
+          ?? payload?.keyId
+          ?? payload?.messageId
+          ?? payload?.id
+          ?? payload?.message?.key?.id
+          ?? payload?.data?.key?.id
+          ?? payload?.data?.keyId
+          ?? payload?.data?.messageId
+          ?? payload?.data?.id,
+        remoteJid: payload?.key?.remoteJid
+          ?? payload?.remoteJid
+          ?? payload?.message?.key?.remoteJid
+          ?? payload?.data?.key?.remoteJid
+          ?? payload?.data?.remoteJid,
       }
     } catch (error) {
       console.error(`WhatsApp send failed to ${phone}:`, error)
