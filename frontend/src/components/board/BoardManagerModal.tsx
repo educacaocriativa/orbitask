@@ -43,6 +43,10 @@ export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardMa
   const [search,         setSearch]         = useState('')
   const [loading,        setLoading]        = useState(false)
   const [populated,      setPopulated]      = useState(false)
+  const hasResolvedEditMembers = Boolean(editBoard?.members?.length)
+  const editBoardId = editBoard?.id
+  const editMemberIds = editBoard?.memberIds ?? []
+  const editMemberIdsKey = editMemberIds.join('|')
 
   // Reset on open
   useEffect(() => {
@@ -71,14 +75,14 @@ export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardMa
     api.get('/users', { params: { search: search || undefined } })
       .then(({ data }) => {
         setAllUsers(data.users)
-        if (editBoard && !populated) {
+        if (editBoardId && !populated && !hasResolvedEditMembers) {
           setPopulated(true)
-          const pre = (data.users as ApiUser[]).filter((u) => editBoard.memberIds.includes(u.id))
+          const pre = (data.users as ApiUser[]).filter((u) => editMemberIds.includes(u.id))
           setMembers(pre)
         }
       })
       .catch(() => {})
-  }, [open, search])
+  }, [open, search, editBoardId, editMemberIdsKey, hasResolvedEditMembers, populated])
 
   const availableUsers = allUsers.filter((u) => !members.find((m) => m.id === u.id))
 
@@ -95,7 +99,8 @@ export function BoardManagerModal({ open, onClose, editBoard, onSaved }: BoardMa
   function toggleCoordinator(userId: string) {
     setCoordinatorIds((prev) => {
       const n = new Set(prev)
-      n.has(userId) ? n.delete(userId) : n.add(userId)
+      if (n.has(userId)) n.delete(userId)
+      else n.add(userId)
       return n
     })
   }
