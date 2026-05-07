@@ -3,9 +3,11 @@ name: 🚀 Orbitask — Build & Push to ECR
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 env:
   AWS_REGION:      us-east-1
+  APP_RUNNER_REGION: us-east-2
   ECR_REPOSITORY:  540280374180.dkr.ecr.us-east-1.amazonaws.com/orbitask-backend
 
 jobs:
@@ -39,3 +41,16 @@ jobs:
             ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
+
+      - name: Trigger App Runner deployment
+        env:
+          APP_RUNNER_SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
+        run: |
+          if [ -z "$APP_RUNNER_SERVICE_ARN" ]; then
+            echo "::error::Missing GitHub secret APP_RUNNER_SERVICE_ARN"
+            exit 1
+          fi
+
+          aws apprunner start-deployment \
+            --region "${{ env.APP_RUNNER_REGION }}" \
+            --service-arn "$APP_RUNNER_SERVICE_ARN"
