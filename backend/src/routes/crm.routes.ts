@@ -364,6 +364,12 @@ export async function crmRoutes(app: FastifyInstance) {
       return match ? `${match[1]}@${match[2]}` : value
     }
 
+    const phoneFromWhatsAppJid = (jid: string | null | undefined) => {
+      const normalized = normalizeWhatsAppJid(jid)
+      if (!normalized.endsWith('@s.whatsapp.net')) return ''
+      return normalized.replace('@s.whatsapp.net', '').replace(/\D/g, '')
+    }
+
     if (body.event === 'messages.update') {
       const updates = Array.isArray((body as any).data)
         ? (body as any).data
@@ -421,19 +427,32 @@ export async function crmRoutes(app: FastifyInstance) {
 
     // Extrai dados da mensagem
     const remoteJid   = normalizeWhatsAppJid(body.data?.key?.remoteJid)
+    const senderJid   = normalizeWhatsAppJid(body.sender)
+    const messageId   = body.data?.key?.id
     const isLid       = remoteJid.endsWith('@lid')
-    const rawPhone    = isLid ? '' : remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '')
+    const rawPhone    = phoneFromWhatsAppJid(remoteJid) || phoneFromWhatsAppJid(senderJid)
+    const jidCandidates = [...new Set([remoteJid, senderJid].filter(Boolean))] as string[]
     const pushName    = body.data?.pushName ?? ''
     const messageText = body.data?.message?.conversation
       ?? body.data?.message?.extendedTextMessage?.text
       ?? ''
 
-    console.log('[CRM-WH] remoteJid=%s isLid=%s rawPhone=%s pushName="%s" textLen=%d',
-      remoteJid, isLid, rawPhone || '-', pushName, messageText.length)
+    console.log('[CRM-WH] remoteJid=%s senderJid=%s isLid=%s rawPhone=%s pushName="%s" messageId=%s textLen=%d',
+      remoteJid, senderJid || '-', isLid, rawPhone || '-', pushName, messageId || '-', messageText.length)
 
     if (!messageText.trim()) {
       console.log('[CRM-WH] skip: mensagem vazia')
       return reply.send({ ok: true })
+    }
+    if (messageId) {
+      const existingMessage = await (prisma as any).crmMessage.findFirst({
+        where: { direction: 'INBOUND', whatsappMessageId: messageId },
+        select: { id: true, leadId: true },
+      })
+      if (existingMessage) {
+        console.log('[CRM-WH] skip: mensagem duplicada messageId=%s leadId=%s', messageId, existingMessage.leadId)
+        return reply.send({ ok: true, duplicate: true })
+      }
     }
     if (!rawPhone && !pushName.trim()) {
       console.log('[CRM-WH] skip: sem telefone nem pushName')
@@ -454,6 +473,12 @@ export async function crmRoutes(app: FastifyInstance) {
         },
       },
     })
+    const leadCandidates = await prisma.crmLead.findMany({
+      where: { isActive: true },
+      include: {
+        decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
+      },
+    })
 
     // Estratégia 1: matching por telefone (formato tradicional @s.whatsapp.net)
     // Compara pelos últimos 10 dígitos pra tolerar prefixos de país, espaços, etc.
@@ -465,7 +490,10 @@ export async function crmRoutes(app: FastifyInstance) {
       return a.length >= 8 && b.length >= 8 && a === b
     }
 
-    const matchJid = (raw: string | null | undefined) => !!raw && normalizeWhatsAppJid(raw) === remoteJid
+    const matchJid = (raw: string | null | undefined) => {
+      if (!raw) return false
+      return jidCandidates.includes(normalizeWhatsAppJid(raw))
+    }
 
     // Estratégia 2: matching por pushName (quando WhatsApp envia @lid e oculta o telefone)
     // Normaliza removendo acentos/case e checa se cada token do pushName aparece no nome do decisor.
@@ -487,7 +515,7 @@ export async function crmRoutes(app: FastifyInstance) {
       return tokens.filter((t) => target.includes(t)).length
     }
 
-    console.log('[CRM-WH] candidatos carregados: %d decisor(es)', candidates.length)
+    console.log('[CRM-WH] candidatos carregados: %d decisor(es), %d lead(s)', candidates.length, leadCandidates.length)
 
     let decisionMaker = candidates.find(
       (dm) => matchJid((dm as any).whatsappJid)
@@ -534,16 +562,51 @@ export async function crmRoutes(app: FastifyInstance) {
 
     let lead = decisionMaker?.lead
 
-    if (!lead && remoteJid) {
-      lead = await (prisma as any).crmLead.findFirst({
-        where: { isActive: true, whatsappJid: remoteJid },
-        include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
-      })
+    if (!lead && jidCandidates.length > 0) {
+      lead = leadCandidates.find((item) => matchJid((item as any).whatsappJid)) as any
       if (lead) {
         decisionMaker = lead.decisionMakers[0]
           ? ({ ...lead.decisionMakers[0], lead } as any)
           : undefined
         console.log('[CRM-WH] match por JID do LEAD â†’ leadId=%s', lead.id)
+      }
+    }
+
+    if (!lead && rawPhone) {
+      lead = leadCandidates.find((item) =>
+        matchPhone(item.companyPhone) ||
+        item.decisionMakers.some((dm) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany))
+      ) as any
+      if (lead) {
+        const matchedDm = lead.decisionMakers.find((dm: any) =>
+          matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany)
+        )
+        decisionMaker = matchedDm
+          ? ({ ...matchedDm, lead } as any)
+          : undefined
+        console.log('[CRM-WH] match por TELEFONE do LEAD -> leadId=%s', lead.id)
+      }
+    }
+
+    if (!lead && (isLid || !rawPhone)) {
+      const scoredLeads = leadCandidates
+        .map((item) => ({
+          lead: item,
+          score: Math.max(scoreName(item.companyName), ...item.decisionMakers.map((dm) => scoreName(dm.name)), 0),
+        }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+
+      console.log('[CRM-WH] tentando match por NOME do LEAD (pushName="%s") -> ranking: [%s]',
+        pushName,
+        scoredLeads.map((item) => `${item.lead.companyName}=${item.score}`).join(', ') || 'vazio')
+
+      if (scoredLeads.length === 1 || (scoredLeads.length > 1 && scoredLeads[0].score > scoredLeads[1].score)) {
+        lead = scoredLeads[0].lead as any
+        decisionMaker = lead.decisionMakers[0]
+          ? ({ ...lead.decisionMakers[0], lead } as any)
+          : undefined
+        console.log('[CRM-WH] match por NOME do LEAD -> leadId=%s', lead.id)
       }
     }
 
@@ -570,6 +633,7 @@ export async function crmRoutes(app: FastifyInstance) {
         content:    messageText,
         senderName: decisionMaker?.name ?? pushName || lead.companyName,
         whatsappRemoteJid: remoteJid || null,
+        whatsappMessageId: messageId ?? null,
       },
     })
 
@@ -606,7 +670,7 @@ export async function crmRoutes(app: FastifyInstance) {
     // Envia a resposta da IA via WhatsApp
     const { WhatsAppService } = await import('../services/WhatsAppService')
     const whatsapp = new WhatsAppService()
-    const phone = decisionMaker?.phonePersonal ?? decisionMaker?.phoneCompany ?? lead.companyPhone ?? ''
+    const phone = decisionMaker?.phonePersonal ?? decisionMaker?.phoneCompany ?? lead.companyPhone ?? rawPhone
     if (!phone) return reply.send({ ok: true })
     const sendResult = await whatsapp.sendMessageWithResult({ phone, message: aiReply })
     const cleanPhone = phone.replace(/\D/g, '')
@@ -993,6 +1057,7 @@ export async function crmRoutes(app: FastifyInstance) {
 interface EvolutionWebhookPayload {
   event:    string
   instance: string
+  sender?:  string
   data?: {
     key?: {
       remoteJid?: string
