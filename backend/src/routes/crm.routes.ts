@@ -385,20 +385,25 @@ export async function crmRoutes(app: FastifyInstance) {
         const possibleMessageIds = [keyId, messageId].filter(Boolean)
         if (possibleMessageIds.length === 0 || !lidJid) continue
 
-        const sentMessage = await (prisma as any).crmMessage.findFirst({
-          where: {
-            direction: 'OUTBOUND',
-            OR: [
-              { whatsappMessageId: { in: possibleMessageIds } },
-              { whatsappRemoteJid: { in: updateJids } },
-            ],
-          },
-          include: {
-            lead: {
-              include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+        let sentMessage: any = null
+        for (let attempt = 1; attempt <= 6; attempt++) {
+          sentMessage = await (prisma as any).crmMessage.findFirst({
+            where: {
+              direction: 'OUTBOUND',
+              OR: [
+                { whatsappMessageId: { in: possibleMessageIds } },
+                { whatsappRemoteJid: { in: updateJids } },
+              ],
             },
-          },
-        })
+            include: {
+              lead: {
+                include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+              },
+            },
+          })
+          if (sentMessage?.lead || attempt === 6) break
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
         if (!sentMessage?.lead) {
           console.log('[CRM-WH] UPDATE sem mensagem CRM correspondente ids=%s jids=%s',
             possibleMessageIds.join('|'), updateJids.join('|') || '-')
@@ -659,7 +664,7 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     // Salva mensagem recebida
-    await (prisma as any).crmMessage?.create({
+    const inboundMessage = await (prisma as any).crmMessage?.create({
       data: {
         leadId:     lead.id,
         direction:  'INBOUND',
@@ -669,6 +674,8 @@ export async function crmRoutes(app: FastifyInstance) {
         whatsappMessageId: messageId ?? null,
       },
     })
+    console.log('[CRM-WH] MENSAGEM INBOUND SALVA leadId=%s messageId=%s crmMessageId=%s',
+      lead.id, messageId || '-', inboundMessage?.id ?? '-')
 
     // Busca histórico de conversas IA para este lead
     const historyEntries = await prisma.crmStageHistory.findMany({
