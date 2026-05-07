@@ -356,7 +356,9 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     const body = request.body as EvolutionWebhookPayload
-    console.log('[CRM-WH] event=%s instance=%s fromMe=%s', body.event, body.instance, body.data?.key?.fromMe)
+    const eventName = (body.event ?? '').toLowerCase().replace(/_/g, '.')
+    const payload = ((body as any).data ?? body) as EvolutionWebhookEventData
+    console.log('[CRM-WH] event=%s instance=%s fromMe=%s', body.event, body.instance, payload?.key?.fromMe)
 
     const normalizeWhatsAppJid = (jid: string | null | undefined) => {
       const value = (jid ?? '').trim()
@@ -370,10 +372,10 @@ export async function crmRoutes(app: FastifyInstance) {
       return normalized.replace('@s.whatsapp.net', '').replace(/\D/g, '')
     }
 
-    if (body.event === 'messages.update') {
-      const updates = Array.isArray((body as any).data)
-        ? (body as any).data
-        : [(body as any).data].filter(Boolean)
+    if (eventName === 'messages.update' || eventName === 'send.message.update') {
+      const updates = Array.isArray(payload)
+        ? payload
+        : [payload].filter(Boolean)
 
       for (const item of updates) {
         const keyId = item?.keyId ?? item?.key?.id
@@ -405,9 +407,28 @@ export async function crmRoutes(app: FastifyInstance) {
           await new Promise((resolve) => setTimeout(resolve, 500))
         }
         if (!sentMessage?.lead) {
-          console.log('[CRM-WH] UPDATE sem mensagem CRM correspondente ids=%s jids=%s',
-            possibleMessageIds.join('|'), updateJids.join('|') || '-')
-          continue
+          const recentMessages = await (prisma as any).crmMessage.findMany({
+            where: {
+              direction: 'OUTBOUND',
+              createdAt: { gte: new Date(Date.now() - 10 * 60 * 1000) },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 2,
+            include: {
+              lead: {
+                include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+              },
+            },
+          })
+          if (recentMessages.length === 1 && recentMessages[0]?.lead) {
+            sentMessage = recentMessages[0]
+            console.log('[CRM-WH] UPDATE vinculado por fallback de outbound recente leadId=%s ids=%s',
+              sentMessage.leadId, possibleMessageIds.join('|'))
+          } else {
+            console.log('[CRM-WH] UPDATE sem mensagem CRM correspondente ids=%s jids=%s recentes=%d',
+              possibleMessageIds.join('|'), updateJids.join('|') || '-', recentMessages.length)
+            continue
+          }
         }
 
         await (prisma as any).crmLead.update({
@@ -437,20 +458,49 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     // Ignora mensagens enviadas por nós (fromMe) e eventos que não são mensagens
-    if (body.event !== 'messages.upsert') return reply.send({ ok: true })
-    if (body.data?.key?.fromMe) return reply.send({ ok: true })
+    if (eventName !== 'messages.upsert' && eventName !== 'send.message') return reply.send({ ok: true })
+    if (payload?.key?.fromMe) {
+      const outboundRemoteJid = normalizeWhatsAppJid(payload.key.remoteJid)
+      const outboundMessageId = payload.key.id
+      const outboundText = payload.message?.conversation
+        ?? payload.message?.extendedTextMessage?.text
+        ?? ''
+
+      if (outboundMessageId) {
+        const recentOutbound = await (prisma as any).crmMessage.findFirst({
+          where: {
+            direction: 'OUTBOUND',
+            createdAt: { gte: new Date(Date.now() - 10 * 60 * 1000) },
+            ...(outboundText.trim() ? { content: outboundText } : {}),
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+        if (recentOutbound) {
+          await (prisma as any).crmMessage.update({
+            where: { id: recentOutbound.id },
+            data: {
+              whatsappMessageId: outboundMessageId,
+              ...(outboundRemoteJid ? { whatsappRemoteJid: outboundRemoteJid } : {}),
+            },
+          })
+          console.log('[CRM-WH] OUTBOUND sincronizado por evento %s leadId=%s messageId=%s remoteJid=%s',
+            eventName, recentOutbound.leadId, outboundMessageId, outboundRemoteJid || '-')
+        }
+      }
+      return reply.send({ ok: true })
+    }
 
     // Extrai dados da mensagem
-    const remoteJid   = normalizeWhatsAppJid(body.data?.key?.remoteJid)
-    const participantJid = normalizeWhatsAppJid(body.data?.key?.participant)
+    const remoteJid   = normalizeWhatsAppJid(payload?.key?.remoteJid)
+    const participantJid = normalizeWhatsAppJid(payload?.key?.participant)
     const senderJid   = normalizeWhatsAppJid(body.sender)
-    const messageId   = body.data?.key?.id
+    const messageId   = payload?.key?.id
     const isLid       = remoteJid.endsWith('@lid')
     const rawPhone    = phoneFromWhatsAppJid(remoteJid) || phoneFromWhatsAppJid(participantJid)
     const jidCandidates = [...new Set([remoteJid, participantJid].filter(Boolean))] as string[]
-    const pushName    = body.data?.pushName ?? ''
-    const messageText = body.data?.message?.conversation
-      ?? body.data?.message?.extendedTextMessage?.text
+    const pushName    = payload?.pushName ?? ''
+    const messageText = payload?.message?.conversation
+      ?? payload?.message?.extendedTextMessage?.text
       ?? ''
 
     console.log('[CRM-WH] remoteJid=%s participantJid=%s senderJid=%s isLid=%s rawPhone=%s pushName="%s" messageId=%s textLen=%d',
@@ -838,6 +888,8 @@ export async function crmRoutes(app: FastifyInstance) {
         whatsappMessageId: sendResult.messageId ?? null,
       },
     })
+    console.log('[CRM-WH] MENSAGEM OUTBOUND SALVA leadId=%s messageId=%s remoteJid=%s crmMessageId=%s',
+      id, sendResult.messageId ?? '-', sendResult.remoteJid ?? `${cleanPhone}@s.whatsapp.net`, message.id)
 
     return reply.status(201).send({ message })
   })
@@ -1098,20 +1150,29 @@ interface EvolutionWebhookPayload {
   event:    string
   instance: string
   sender?:  string
-  data?: {
-    key?: {
-      remoteJid?: string
-      fromMe?:    boolean
-      id?:        string
-      participant?: string
-    }
-    pushName?: string
-    message?: {
-      conversation?:          string
-      extendedTextMessage?: { text?: string }
-    }
-    messageTimestamp?: number
+  data?: EvolutionWebhookEventData | EvolutionWebhookEventData[]
+}
+
+interface EvolutionWebhookEventData {
+  key?: {
+    remoteJid?: string
+    fromMe?:    boolean
+    id?:        string
+    participant?: string
   }
+  keyId?: string
+  messageId?: string
+  id?: string
+  remoteJid?: string
+  fromMe?: boolean
+  participant?: string
+  status?: string
+  pushName?: string
+  message?: {
+    conversation?:          string
+    extendedTextMessage?: { text?: string }
+  }
+  messageTimestamp?: number
 }
 
 interface ApifyLead {

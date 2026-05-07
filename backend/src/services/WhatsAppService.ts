@@ -23,6 +23,42 @@ interface SendMessageResult {
   remoteJid?: string
 }
 
+function collectStringsByKey(payload: unknown, keys: string[]): string[] {
+  const values: string[] = []
+  const seen = new Set<unknown>()
+
+  function walk(value: unknown) {
+    if (!value || typeof value !== 'object' || seen.has(value)) return
+    seen.add(value)
+
+    if (Array.isArray(value)) {
+      value.forEach(walk)
+      return
+    }
+
+    const object = value as Record<string, unknown>
+    for (const key of keys) {
+      const item = object[key]
+      if (typeof item === 'string' && item.trim()) values.push(item.trim())
+    }
+    Object.values(object).forEach(walk)
+  }
+
+  walk(payload)
+  return [...new Set(values)]
+}
+
+function extractMessageId(payload: unknown): string | undefined {
+  const ids = collectStringsByKey(payload, ['keyId', 'messageId', 'id'])
+    .filter((id) => !id.includes('@') && id !== 'conversation')
+  return ids.find((id) => /^3E[A-Z0-9]+$/i.test(id)) ?? ids[0]
+}
+
+function extractRemoteJid(payload: unknown): string | undefined {
+  return collectStringsByKey(payload, ['remoteJid', 'participant'])
+    .find((jid) => /@(s\.whatsapp\.net|lid)$/.test(jid))
+}
+
 export class WhatsAppService {
   private instance = env.EVOLUTION_INSTANCE
 
@@ -59,7 +95,8 @@ export class WhatsAppService {
       const payload = response.data as any
       return {
         success: true,
-        messageId: payload?.key?.id
+        messageId: extractMessageId(payload)
+          ?? payload?.key?.id
           ?? payload?.keyId
           ?? payload?.messageId
           ?? payload?.id
@@ -68,7 +105,8 @@ export class WhatsAppService {
           ?? payload?.data?.keyId
           ?? payload?.data?.messageId
           ?? payload?.data?.id,
-        remoteJid: payload?.key?.remoteJid
+        remoteJid: extractRemoteJid(payload)
+          ?? payload?.key?.remoteJid
           ?? payload?.remoteJid
           ?? payload?.message?.key?.remoteJid
           ?? payload?.data?.key?.remoteJid
