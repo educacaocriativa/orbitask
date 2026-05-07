@@ -379,13 +379,19 @@ export async function crmRoutes(app: FastifyInstance) {
         const keyId = item?.keyId ?? item?.key?.id
         const messageId = item?.messageId ?? item?.id
         const remoteJid = normalizeWhatsAppJid(item?.remoteJid ?? item?.key?.remoteJid)
+        const participantJid = normalizeWhatsAppJid(item?.participant ?? item?.key?.participant)
+        const updateJids = [...new Set([remoteJid, participantJid].filter(Boolean))] as string[]
+        const lidJid = updateJids.find((jid) => jid.endsWith('@lid'))
         const possibleMessageIds = [keyId, messageId].filter(Boolean)
-        if (possibleMessageIds.length === 0 || !remoteJid?.endsWith('@lid')) continue
+        if (possibleMessageIds.length === 0 || !lidJid) continue
 
         const sentMessage = await (prisma as any).crmMessage.findFirst({
           where: {
             direction: 'OUTBOUND',
-            whatsappMessageId: { in: possibleMessageIds },
+            OR: [
+              { whatsappMessageId: { in: possibleMessageIds } },
+              { whatsappRemoteJid: { in: updateJids } },
+            ],
           },
           include: {
             lead: {
@@ -393,11 +399,15 @@ export async function crmRoutes(app: FastifyInstance) {
             },
           },
         })
-        if (!sentMessage?.lead) continue
+        if (!sentMessage?.lead) {
+          console.log('[CRM-WH] UPDATE sem mensagem CRM correspondente ids=%s jids=%s',
+            possibleMessageIds.join('|'), updateJids.join('|') || '-')
+          continue
+        }
 
         await (prisma as any).crmLead.update({
           where: { id: sentMessage.leadId },
-          data:  { whatsappJid: remoteJid },
+          data:  { whatsappJid: lidJid },
         })
 
         const sentToDigits = (sentMessage.whatsappRemoteJid ?? '').replace(/\D/g, '')
@@ -410,12 +420,12 @@ export async function crmRoutes(app: FastifyInstance) {
         if (decisionMaker) {
           await (prisma as any).crmDecisionMaker.update({
             where: { id: decisionMaker.id },
-            data:  { whatsappJid: remoteJid },
+            data:  { whatsappJid: lidJid },
           })
         }
 
         console.log('[CRM-WH] vinculado LID por UPDATE messageId=%s leadId=%s remoteJid=%s',
-          possibleMessageIds.join('|'), sentMessage.leadId, remoteJid)
+          possibleMessageIds.join('|'), sentMessage.leadId, lidJid)
       }
 
       return reply.send({ ok: true })
@@ -427,18 +437,19 @@ export async function crmRoutes(app: FastifyInstance) {
 
     // Extrai dados da mensagem
     const remoteJid   = normalizeWhatsAppJid(body.data?.key?.remoteJid)
+    const participantJid = normalizeWhatsAppJid(body.data?.key?.participant)
     const senderJid   = normalizeWhatsAppJid(body.sender)
     const messageId   = body.data?.key?.id
     const isLid       = remoteJid.endsWith('@lid')
-    const rawPhone    = phoneFromWhatsAppJid(remoteJid) || phoneFromWhatsAppJid(senderJid)
-    const jidCandidates = [...new Set([remoteJid, senderJid].filter(Boolean))] as string[]
+    const rawPhone    = phoneFromWhatsAppJid(remoteJid) || phoneFromWhatsAppJid(participantJid)
+    const jidCandidates = [...new Set([remoteJid, participantJid].filter(Boolean))] as string[]
     const pushName    = body.data?.pushName ?? ''
     const messageText = body.data?.message?.conversation
       ?? body.data?.message?.extendedTextMessage?.text
       ?? ''
 
-    console.log('[CRM-WH] remoteJid=%s senderJid=%s isLid=%s rawPhone=%s pushName="%s" messageId=%s textLen=%d',
-      remoteJid, senderJid || '-', isLid, rawPhone || '-', pushName, messageId || '-', messageText.length)
+    console.log('[CRM-WH] remoteJid=%s participantJid=%s senderJid=%s isLid=%s rawPhone=%s pushName="%s" messageId=%s textLen=%d',
+      remoteJid, participantJid || '-', senderJid || '-', isLid, rawPhone || '-', pushName, messageId || '-', messageText.length)
 
     if (!messageText.trim()) {
       console.log('[CRM-WH] skip: mensagem vazia')
@@ -572,6 +583,28 @@ export async function crmRoutes(app: FastifyInstance) {
       }
     }
 
+    if (!lead && jidCandidates.length > 0) {
+      const recentOutbound = await (prisma as any).crmMessage.findFirst({
+        where: {
+          direction: 'OUTBOUND',
+          whatsappRemoteJid: { in: jidCandidates },
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          lead: {
+            include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+          },
+        },
+      })
+      if (recentOutbound?.lead) {
+        lead = recentOutbound.lead
+        decisionMaker = lead.decisionMakers[0]
+          ? ({ ...lead.decisionMakers[0], lead } as any)
+          : undefined
+        console.log('[CRM-WH] match por ULTIMA MENSAGEM OUTBOUND -> leadId=%s', lead.id)
+      }
+    }
+
     if (!lead && rawPhone) {
       lead = leadCandidates.find((item) =>
         matchPhone(item.companyPhone) ||
@@ -631,7 +664,7 @@ export async function crmRoutes(app: FastifyInstance) {
         leadId:     lead.id,
         direction:  'INBOUND',
         content:    messageText,
-        senderName: decisionMaker?.name ?? pushName || lead.companyName,
+        senderName: decisionMaker?.name ?? (pushName || lead.companyName),
         whatsappRemoteJid: remoteJid || null,
         whatsappMessageId: messageId ?? null,
       },
@@ -1063,6 +1096,7 @@ interface EvolutionWebhookPayload {
       remoteJid?: string
       fromMe?:    boolean
       id?:        string
+      participant?: string
     }
     pushName?: string
     message?: {
