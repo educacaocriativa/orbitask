@@ -431,6 +431,14 @@ export async function crmRoutes(app: FastifyInstance) {
           }
         }
 
+        await (prisma as any).crmMessage.update({
+          where: { id: sentMessage.id },
+          data: {
+            whatsappRemoteJid: lidJid,
+            whatsappMessageId: keyId ?? sentMessage.whatsappMessageId ?? messageId ?? null,
+          },
+        })
+
         await (prisma as any).crmLead.update({
           where: { id: sentMessage.leadId },
           data:  { whatsappJid: lidJid },
@@ -450,8 +458,8 @@ export async function crmRoutes(app: FastifyInstance) {
           })
         }
 
-        console.log('[CRM-WH] vinculado LID por UPDATE messageId=%s leadId=%s remoteJid=%s',
-          possibleMessageIds.join('|'), sentMessage.leadId, lidJid)
+        console.log('[CRM-WH] vinculado LID por UPDATE messageId=%s leadId=%s remoteJid=%s crmMessageId=%s',
+          possibleMessageIds.join('|'), sentMessage.leadId, lidJid, sentMessage.id)
       }
 
       return reply.send({ ok: true })
@@ -652,11 +660,12 @@ export async function crmRoutes(app: FastifyInstance) {
         },
       })
       if (recentOutbound?.lead) {
-        lead = recentOutbound.lead
-        decisionMaker = lead.decisionMakers[0]
-          ? ({ ...lead.decisionMakers[0], lead } as any)
+        const selectedLead = recentOutbound.lead
+        lead = selectedLead
+        decisionMaker = selectedLead.decisionMakers[0]
+          ? ({ ...selectedLead.decisionMakers[0], lead: selectedLead } as any)
           : undefined
-        console.log('[CRM-WH] match por ULTIMA MENSAGEM OUTBOUND -> leadId=%s', lead.id)
+        console.log('[CRM-WH] match por ULTIMA MENSAGEM OUTBOUND -> leadId=%s', selectedLead.id)
       }
     }
 
@@ -690,11 +699,58 @@ export async function crmRoutes(app: FastifyInstance) {
         scoredLeads.map((item) => `${item.lead.companyName}=${item.score}`).join(', ') || 'vazio')
 
       if (scoredLeads.length === 1 || (scoredLeads.length > 1 && scoredLeads[0].score > scoredLeads[1].score)) {
-        lead = scoredLeads[0].lead as any
-        decisionMaker = lead.decisionMakers[0]
-          ? ({ ...lead.decisionMakers[0], lead } as any)
+        const selectedLead = scoredLeads[0].lead
+        lead = selectedLead as any
+        decisionMaker = selectedLead.decisionMakers[0]
+          ? ({ ...selectedLead.decisionMakers[0], lead: selectedLead } as any)
           : undefined
-        console.log('[CRM-WH] match por NOME do LEAD -> leadId=%s', lead.id)
+        console.log('[CRM-WH] match por NOME do LEAD -> leadId=%s', selectedLead.id)
+      }
+    }
+
+    if (!lead && (isLid || !rawPhone)) {
+      const recentOutboundMessages = await (prisma as any).crmMessage.findMany({
+        where: {
+          direction: 'OUTBOUND',
+          createdAt: { gte: new Date(Date.now() - 30 * 60 * 1000) },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        include: {
+          lead: {
+            include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+          },
+        },
+      })
+
+      const scoredRecentOutbound = recentOutboundMessages
+        .filter((message: any) => message.lead?.isActive)
+        .map((message: any, index: number) => ({
+          message,
+          score: Math.max(
+            scoreName(message.lead.companyName),
+            ...message.lead.decisionMakers.map((dm: any) => scoreName(dm.name)),
+            0
+          ) + (message.sentBy === 'HUMAN' ? 2 : 0) + Math.max(0, 10 - index) / 100,
+        }))
+        .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
+
+      console.log('[CRM-WH] tentando fallback por OUTBOUND recente (pushName="%s") -> ranking: [%s]',
+        pushName,
+        scoredRecentOutbound
+          .map((item: any) => `${item.message.lead.companyName}=${item.score.toFixed(2)}`)
+          .join(', ') || 'vazio')
+
+      const best = scoredRecentOutbound[0]
+      const second = scoredRecentOutbound[1]
+      if (best && (recentOutboundMessages.length === 1 || best.score > (second?.score ?? 0) + 0.5)) {
+        const selectedLead = best.message.lead
+        lead = selectedLead
+        decisionMaker = selectedLead.decisionMakers[0]
+          ? ({ ...selectedLead.decisionMakers[0], lead: selectedLead } as any)
+          : undefined
+        console.log('[CRM-WH] match por OUTBOUND recente -> leadId=%s crmMessageId=%s',
+          selectedLead.id, best.message.id)
       }
     }
 
