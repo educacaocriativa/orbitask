@@ -36,11 +36,37 @@ jobs:
         with:
           context: ./backend
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
           tags: |
             ${{ env.ECR_REPOSITORY }}:latest
             ${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
+
+      - name: Check App Runner source image
+        env:
+          APP_RUNNER_SERVICE_ARN: ${{ secrets.APP_RUNNER_SERVICE_ARN }}
+        run: |
+          if [ -z "$APP_RUNNER_SERVICE_ARN" ]; then
+            echo "::error::Missing GitHub secret APP_RUNNER_SERVICE_ARN"
+            exit 1
+          fi
+
+          IMAGE_IDENTIFIER="$(aws apprunner describe-service \
+            --region "${{ env.APP_RUNNER_REGION }}" \
+            --service-arn "$APP_RUNNER_SERVICE_ARN" \
+            --query 'Service.SourceConfiguration.ImageRepository.ImageIdentifier' \
+            --output text)"
+
+          echo "App Runner image: $IMAGE_IDENTIFIER"
+          echo "Workflow pushed:  ${{ env.ECR_REPOSITORY }}:latest"
+          echo "Workflow SHA tag: ${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+
+          if [ "$IMAGE_IDENTIFIER" != "${{ env.ECR_REPOSITORY }}:latest" ]; then
+            echo "::error::App Runner is not configured to deploy ${{ env.ECR_REPOSITORY }}:latest. It will redeploy the old image until the service source image is updated."
+            exit 1
+          fi
 
       - name: Trigger App Runner deployment
         env:

@@ -59,7 +59,10 @@ export async function buildApp() {
   await app.register(websocketRoutes)
 
   app.get('/health', async () => ({
-    status: 'ok', environment: env.NODE_ENV, timestamp: new Date().toISOString(),
+    status: 'ok',
+    environment: env.NODE_ENV,
+    version: process.env.APP_VERSION ?? null,
+    timestamp: new Date().toISOString(),
     services: { database: 'connected', redis: 'connected', minio: 'connected' },
   }))
 
@@ -105,13 +108,6 @@ async function ensureCrmTables() {
       updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
       INDEX crm_leads_stage_position_idx (stage, position)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
-    [`crm_leads.segment (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS segment VARCHAR(191) NULL`],
-    [`users.crm_access (migration)`, `ALTER TABLE users ADD COLUMN IF NOT EXISTS crm_access TINYINT(1) NOT NULL DEFAULT 0`],
-    [`crm_leads.company_website (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS company_website TEXT NULL`],
-    [`crm_leads.whatsapp_jid (migration)`, `ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS whatsapp_jid VARCHAR(191) NULL`],
-    [`boards.is_archived (migration)`, `ALTER TABLE boards ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
-    [`columns.is_archived (migration)`, `ALTER TABLE columns ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
-    [`cards.is_archived (migration)`, `ALTER TABLE cards ADD COLUMN IF NOT EXISTS is_archived TINYINT(1) NOT NULL DEFAULT 0`],
     [`crm_messages`, `CREATE TABLE IF NOT EXISTS crm_messages (
       id VARCHAR(191) NOT NULL PRIMARY KEY,
       lead_id VARCHAR(191) NOT NULL,
@@ -127,8 +123,6 @@ async function ensureCrmTables() {
       FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE,
       FOREIGN KEY (sent_by_user_id) REFERENCES users(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
-    [`crm_messages.whatsapp_remote_jid (migration)`, `ALTER TABLE crm_messages ADD COLUMN IF NOT EXISTS whatsapp_remote_jid VARCHAR(191) NULL`],
-    [`crm_messages.whatsapp_message_id (migration)`, `ALTER TABLE crm_messages ADD COLUMN IF NOT EXISTS whatsapp_message_id VARCHAR(191) NULL`],
     [`crm_decision_makers`, `CREATE TABLE IF NOT EXISTS crm_decision_makers (
       id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
       name VARCHAR(191) NOT NULL, role VARCHAR(191), email VARCHAR(191),
@@ -138,7 +132,6 @@ async function ensureCrmTables() {
       updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
       FOREIGN KEY (lead_id) REFERENCES crm_leads(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
-    [`crm_decision_makers.whatsapp_jid (migration)`, `ALTER TABLE crm_decision_makers ADD COLUMN IF NOT EXISTS whatsapp_jid VARCHAR(191) NULL`],
     [`crm_stage_history`, `CREATE TABLE IF NOT EXISTS crm_stage_history (
       id VARCHAR(191) NOT NULL PRIMARY KEY, lead_id VARCHAR(191) NOT NULL,
       from_stage ENUM(${stage}), to_stage ENUM(${stage}) NOT NULL,
@@ -158,7 +151,7 @@ async function ensureCrmTables() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`],
     [`crm_skills`, `CREATE TABLE IF NOT EXISTS crm_skills (
       id VARCHAR(191) NOT NULL PRIMARY KEY, name VARCHAR(191) NOT NULL,
-      description TEXT, content LONGTEXT NOT NULL, trigger VARCHAR(191),
+      description TEXT, content LONGTEXT NOT NULL, \`trigger\` VARCHAR(191),
       is_active TINYINT(1) NOT NULL DEFAULT 1, \`order\` INT NOT NULL DEFAULT 0,
       created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
       updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
@@ -167,6 +160,46 @@ async function ensureCrmTables() {
   for (const [name, sql] of tables) {
     try {
       await prisma.$executeRawUnsafe(sql)
+      console.log(`  ✅ ${name}`)
+    } catch (err: any) {
+      console.warn(`  ⚠️  ${name}: ${err?.message ?? err}`)
+    }
+  }
+  const quoteIdentifier = (identifier: string) => {
+    if (!/^[a-zA-Z0-9_]+$/.test(identifier)) throw new Error(`Invalid SQL identifier: ${identifier}`)
+    return `\`${identifier}\``
+  }
+
+  const columns: Array<[string, string, string]> = [
+    ['crm_leads', 'segment', 'VARCHAR(191) NULL'],
+    ['users', 'crm_access', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['crm_leads', 'company_website', 'TEXT NULL'],
+    ['crm_leads', 'whatsapp_jid', 'VARCHAR(191) NULL'],
+    ['boards', 'is_archived', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['columns', 'is_archived', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['cards', 'is_archived', 'TINYINT(1) NOT NULL DEFAULT 0'],
+    ['crm_messages', 'whatsapp_remote_jid', 'VARCHAR(191) NULL'],
+    ['crm_messages', 'whatsapp_message_id', 'VARCHAR(191) NULL'],
+    ['crm_decision_makers', 'whatsapp_jid', 'VARCHAR(191) NULL'],
+  ]
+
+  for (const [table, column, definition] of columns) {
+    const name = `${table}.${column} (migration)`
+    try {
+      const rows = await prisma.$queryRawUnsafe<Array<{ total: bigint | number }>>(
+        `SELECT COUNT(*) AS total
+           FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = ?
+            AND COLUMN_NAME = ?`,
+        table,
+        column,
+      )
+      if (Number(rows[0]?.total ?? 0) === 0) {
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE ${quoteIdentifier(table)} ADD COLUMN ${quoteIdentifier(column)} ${definition}`,
+        )
+      }
       console.log(`  ✅ ${name}`)
     } catch (err: any) {
       console.warn(`  ⚠️  ${name}: ${err?.message ?? err}`)

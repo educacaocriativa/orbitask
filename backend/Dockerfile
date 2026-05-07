@@ -21,7 +21,9 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
+ARG GIT_SHA=local
 ENV NODE_ENV=production
+ENV APP_VERSION=$GIT_SHA
 
 RUN apk add --no-cache openssl redis
 
