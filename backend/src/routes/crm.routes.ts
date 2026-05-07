@@ -36,7 +36,6 @@ function canCrm(user: { role: string; crmAccess?: boolean }) {
 }
 
 export async function crmRoutes(app: FastifyInstance) {
-
   // ── GET /crm/leads — kanban agrupado por etapa ────────────
   app.get('/crm/leads', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
@@ -51,10 +50,13 @@ export async function crmRoutes(app: FastifyInstance) {
     })
 
     // Agrupar por etapa
-    const kanban = CRM_STAGES.reduce((acc, stage) => {
-      acc[stage] = leads.filter((l) => l.stage === stage)
-      return acc
-    }, {} as Record<CrmStage, typeof leads>)
+    const kanban = CRM_STAGES.reduce(
+      (acc, stage) => {
+        acc[stage] = leads.filter((l) => l.stage === stage)
+        return acc
+      },
+      {} as Record<CrmStage, typeof leads>,
+    )
 
     return reply.send({ kanban, total: leads.length })
   })
@@ -80,8 +82,12 @@ export async function crmRoutes(app: FastifyInstance) {
       companyWebsite?: string
       segment?: string
       decisionMakers?: Array<{
-        name: string; role?: string; email?: string
-        phoneCompany?: string; phonePersonal?: string; linkedin?: string
+        name: string
+        role?: string
+        email?: string
+        phoneCompany?: string
+        phonePersonal?: string
+        linkedin?: string
         isPrimary?: boolean
       }>
     }
@@ -89,17 +95,18 @@ export async function crmRoutes(app: FastifyInstance) {
     if (!body.companyName?.trim()) throw new AppError('Nome da empresa é obrigatório', 400)
 
     const lastLead = await prisma.crmLead.findFirst({
-      where: { stage: 'LEAD' }, orderBy: { position: 'desc' },
+      where: { stage: 'LEAD' },
+      orderBy: { position: 'desc' },
     })
 
     const lead = await prisma.crmLead.create({
       data: {
-        companyName:    body.companyName.trim(),
-        companyPhone:   body.companyPhone?.trim() || null,
+        companyName: body.companyName.trim(),
+        companyPhone: body.companyPhone?.trim() || null,
         companyWebsite: body.companyWebsite?.trim() || null,
-        segment:        body.segment?.trim() || null,
-        stage:        'LEAD',
-        position:     (lastLead?.position ?? -1) + 1,
+        segment: body.segment?.trim() || null,
+        stage: 'LEAD',
+        position: (lastLead?.position ?? -1) + 1,
         decisionMakers: body.decisionMakers?.length
           ? { create: body.decisionMakers.map((dm, i) => ({ ...dm, isPrimary: i === 0 })) }
           : undefined,
@@ -113,19 +120,26 @@ export async function crmRoutes(app: FastifyInstance) {
     return reply.status(201).send({ lead })
   })
 
-  // ── PATCH /crm/leads/:id — editar empresa ─────────────────
+  // ── PATCH /crm/leads/:id — editar empresa ─────────────
   app.patch('/crm/leads/:id', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
-    const body = request.body as { companyName?: string; companyPhone?: string; companyWebsite?: string; segment?: string }
+    const body = request.body as {
+      companyName?: string
+      companyPhone?: string
+      companyWebsite?: string
+      segment?: string
+    }
 
     const lead = await prisma.crmLead.update({
       where: { id },
       data: {
-        ...(body.companyName    && { companyName:    body.companyName.trim() }),
-        ...(body.companyPhone   !== undefined && { companyPhone:   body.companyPhone?.trim()   || null }),
-        ...(body.companyWebsite !== undefined && { companyWebsite: body.companyWebsite?.trim() || null }),
-        ...(body.segment        !== undefined && { segment:        body.segment?.trim()        || null }),
+        ...(body.companyName && { companyName: body.companyName.trim() }),
+        ...(body.companyPhone !== undefined && { companyPhone: body.companyPhone?.trim() || null }),
+        ...(body.companyWebsite !== undefined && {
+          companyWebsite: body.companyWebsite?.trim() || null,
+        }),
+        ...(body.segment !== undefined && { segment: body.segment?.trim() || null }),
       },
       include: LEAD_INCLUDE,
     })
@@ -146,7 +160,8 @@ export async function crmRoutes(app: FastifyInstance) {
     if (lead.stage === toStage) throw new AppError('Lead já está nesta etapa', 400)
 
     const lastInStage = await prisma.crmLead.findFirst({
-      where: { stage: toStage }, orderBy: { position: 'desc' },
+      where: { stage: toStage },
+      orderBy: { position: 'desc' },
     })
 
     const [updated] = await prisma.$transaction([
@@ -157,10 +172,10 @@ export async function crmRoutes(app: FastifyInstance) {
       }),
       prisma.crmStageHistory.create({
         data: {
-          leadId:    id,
+          leadId: id,
           fromStage: lead.stage,
           toStage,
-          notes:     notes?.trim() || null,
+          notes: notes?.trim() || null,
           movedById: request.user.id,
         },
       }),
@@ -176,7 +191,10 @@ export async function crmRoutes(app: FastifyInstance) {
               include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }] } },
             }),
             (prisma as any).crmProduct?.findMany({ where: { isActive: true } }) ?? [],
-            (prisma as any).crmSkill?.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } }) ?? [],
+            (prisma as any).crmSkill?.findMany({
+              where: { isActive: true },
+              orderBy: { order: 'asc' },
+            }) ?? [],
           ])
           if (!fullLead) return
           const primary = fullLead.decisionMakers[0]
@@ -196,14 +214,14 @@ export async function crmRoutes(app: FastifyInstance) {
             })
             await prisma.crmStageHistory.create({
               data: {
-                leadId:        id,
-                fromStage:     'PRIMEIRO_CONTATO',
-                toStage:       'PRIMEIRO_CONTATO',
-                isAiMove:      true,
-                notes:         'Primeira mensagem enviada pela IA',
-                aiConversation: JSON.parse(JSON.stringify([
-                  { role: 'assistant', content: msg.message },
-                ])),
+                leadId: id,
+                fromStage: 'PRIMEIRO_CONTATO',
+                toStage: 'PRIMEIRO_CONTATO',
+                isAiMove: true,
+                notes: 'Primeira mensagem enviada pela IA',
+                aiConversation: JSON.parse(
+                  JSON.stringify([{ role: 'assistant', content: msg.message }]),
+                ),
               },
             })
           }
@@ -226,35 +244,52 @@ export async function crmRoutes(app: FastifyInstance) {
   })
 
   // ── POST /crm/leads/:id/decision-makers ───────────────────
-  app.post('/crm/leads/:id/decision-makers', { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
-    const { id } = request.params as { id: string }
-    const body = request.body as {
-      name: string; role?: string; email?: string
-      phoneCompany?: string; phonePersonal?: string; linkedin?: string; isPrimary?: boolean
-    }
+  app.post(
+    '/crm/leads/:id/decision-makers',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
+      const { id } = request.params as { id: string }
+      const body = request.body as {
+        name: string
+        role?: string
+        email?: string
+        phoneCompany?: string
+        phonePersonal?: string
+        linkedin?: string
+        isPrimary?: boolean
+      }
 
-    if (!body.name?.trim()) throw new AppError('Nome é obrigatório', 400)
+      if (!body.name?.trim()) throw new AppError('Nome é obrigatório', 400)
 
-    // Se novo decisor é primário, remove o flag dos outros
-    if (body.isPrimary) {
-      await prisma.crmDecisionMaker.updateMany({ where: { leadId: id }, data: { isPrimary: false } })
-    }
+      // Se novo decisor é primário, remove o flag dos outros
+      if (body.isPrimary) {
+        await prisma.crmDecisionMaker.updateMany({
+          where: { leadId: id },
+          data: { isPrimary: false },
+        })
+      }
 
-    const dm = await prisma.crmDecisionMaker.create({
-      data: { ...body, name: body.name.trim(), leadId: id },
-    })
+      const dm = await prisma.crmDecisionMaker.create({
+        data: { ...body, name: body.name.trim(), leadId: id },
+      })
 
-    return reply.status(201).send({ decisionMaker: dm })
-  })
+      return reply.status(201).send({ decisionMaker: dm })
+    },
+  )
 
   // ── PATCH /crm/decision-makers/:id ────────────────────────
   app.patch('/crm/decision-makers/:id', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const body = request.body as {
-      name?: string; role?: string; email?: string
-      phoneCompany?: string; phonePersonal?: string; linkedin?: string; isPrimary?: boolean
+      name?: string
+      role?: string
+      email?: string
+      phoneCompany?: string
+      phonePersonal?: string
+      linkedin?: string
+      isPrimary?: boolean
     }
 
     const existing = await prisma.crmDecisionMaker.findUnique({ where: { id } })
@@ -262,7 +297,8 @@ export async function crmRoutes(app: FastifyInstance) {
 
     if (body.isPrimary) {
       await prisma.crmDecisionMaker.updateMany({
-        where: { leadId: existing.leadId }, data: { isPrimary: false },
+        where: { leadId: existing.leadId },
+        data: { isPrimary: false },
       })
     }
 
@@ -288,52 +324,58 @@ export async function crmRoutes(app: FastifyInstance) {
       throw new AppError('Token inválido', 401)
     }
 
-    const body = request.body as
-      | Array<ApifyLead>
-      | ApifyLead
-      | { leads: ApifyLead[] }
+    const body = request.body as Array<ApifyLead> | ApifyLead | { leads: ApifyLead[] }
 
     // Normaliza para array
     let leads: ApifyLead[] = []
-    if (Array.isArray(body))        leads = body
-    else if ('leads' in body)       leads = body.leads
-    else                            leads = [body as ApifyLead]
+    if (Array.isArray(body)) leads = body
+    else if ('leads' in body) leads = body.leads
+    else leads = [body as ApifyLead]
 
     let created = 0
     let skipped = 0
 
     for (const item of leads) {
-      if (!item.companyName) { skipped++; continue }
+      if (!item.companyName) {
+        skipped++
+        continue
+      }
 
       // Evita duplicatas pelo nome da empresa (case-insensitive)
       const existing = await prisma.crmLead.findFirst({
         where: { companyName: item.companyName, isActive: true },
       })
-      if (existing) { skipped++; continue }
+      if (existing) {
+        skipped++
+        continue
+      }
 
       const lastLead = await prisma.crmLead.findFirst({
-        where: { stage: 'LEAD' }, orderBy: { position: 'desc' },
+        where: { stage: 'LEAD' },
+        orderBy: { position: 'desc' },
       })
 
       await prisma.crmLead.create({
         data: {
-          companyName:    item.companyName.trim(),
-          companyPhone:   item.companyPhone ?? null,
+          companyName: item.companyName.trim(),
+          companyPhone: item.companyPhone ?? null,
           companyWebsite: item.website ?? null,
           apifySourceUrl: item.sourceUrl ?? null,
-          apifyRawData:   JSON.parse(JSON.stringify(item)),
-          stage:          'LEAD',
-          position:       (lastLead?.position ?? -1) + 1,
+          apifyRawData: JSON.parse(JSON.stringify(item)),
+          stage: 'LEAD',
+          position: (lastLead?.position ?? -1) + 1,
           decisionMakers: item.decisionMakerName
             ? {
-                create: [{
-                  name:          item.decisionMakerName,
-                  role:          item.decisionMakerRole ?? null,
-                  email:         item.decisionMakerEmail ?? null,
-                  phonePersonal: item.decisionMakerPhone ?? null,
-                  linkedin:      item.decisionMakerLinkedin ?? null,
-                  isPrimary:     true,
-                }],
+                create: [
+                  {
+                    name: item.decisionMakerName,
+                    role: item.decisionMakerRole ?? null,
+                    email: item.decisionMakerEmail ?? null,
+                    phonePersonal: item.decisionMakerPhone ?? null,
+                    linkedin: item.decisionMakerLinkedin ?? null,
+                    isPrimary: true,
+                  },
+                ],
               }
             : undefined,
           stageHistory: {
@@ -358,7 +400,12 @@ export async function crmRoutes(app: FastifyInstance) {
     const body = request.body as EvolutionWebhookPayload
     const eventName = (body.event ?? '').toLowerCase().replace(/_/g, '.')
     const payload = ((body as any).data ?? body) as EvolutionWebhookEventData
-    console.log('[CRM-WH] event=%s instance=%s fromMe=%s', body.event, body.instance, payload?.key?.fromMe)
+    console.log(
+      '[CRM-WH] event=%s instance=%s fromMe=%s',
+      body.event,
+      body.instance,
+      payload?.key?.fromMe,
+    )
 
     const normalizeWhatsAppJid = (jid: string | null | undefined) => {
       const value = (jid ?? '').trim()
@@ -373,9 +420,7 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     if (eventName === 'messages.update' || eventName === 'send.message.update') {
-      const updates = Array.isArray(payload)
-        ? payload
-        : [payload].filter(Boolean)
+      const updates = Array.isArray(payload) ? payload : [payload].filter(Boolean)
 
       for (const item of updates) {
         const keyId = item?.keyId ?? item?.key?.id
@@ -399,7 +444,9 @@ export async function crmRoutes(app: FastifyInstance) {
             },
             include: {
               lead: {
-                include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+                include: {
+                  decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
+                },
               },
             },
           })
@@ -416,17 +463,26 @@ export async function crmRoutes(app: FastifyInstance) {
             take: 2,
             include: {
               lead: {
-                include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
+                include: {
+                  decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] },
+                },
               },
             },
           })
           if (recentMessages.length === 1 && recentMessages[0]?.lead) {
             sentMessage = recentMessages[0]
-            console.log('[CRM-WH] UPDATE vinculado por fallback de outbound recente leadId=%s ids=%s',
-              sentMessage.leadId, possibleMessageIds.join('|'))
+            console.log(
+              '[CRM-WH] UPDATE vinculado por fallback de outbound recente leadId=%s ids=%s',
+              sentMessage.leadId,
+              possibleMessageIds.join('|'),
+            )
           } else {
-            console.log('[CRM-WH] UPDATE sem mensagem CRM correspondente ids=%s jids=%s recentes=%d',
-              possibleMessageIds.join('|'), updateJids.join('|') || '-', recentMessages.length)
+            console.log(
+              '[CRM-WH] UPDATE sem mensagem CRM correspondente ids=%s jids=%s recentes=%d',
+              possibleMessageIds.join('|'),
+              updateJids.join('|') || '-',
+              recentMessages.length,
+            )
             continue
           }
         }
@@ -441,38 +497,48 @@ export async function crmRoutes(app: FastifyInstance) {
 
         await (prisma as any).crmLead.update({
           where: { id: sentMessage.leadId },
-          data:  { whatsappJid: lidJid },
+          data: { whatsappJid: lidJid },
         })
 
         const sentToDigits = (sentMessage.whatsappRemoteJid ?? '').replace(/\D/g, '')
-        const decisionMaker = sentMessage.lead.decisionMakers.find((dm: any) => {
-          const personal = (dm.phonePersonal ?? '').replace(/\D/g, '')
-          const company  = (dm.phoneCompany ?? '').replace(/\D/g, '')
-          return sentToDigits && (personal.endsWith(sentToDigits.slice(-10)) || company.endsWith(sentToDigits.slice(-10)))
-        }) ?? sentMessage.lead.decisionMakers[0]
+        const decisionMaker =
+          sentMessage.lead.decisionMakers.find((dm: any) => {
+            const personal = (dm.phonePersonal ?? '').replace(/\D/g, '')
+            const company = (dm.phoneCompany ?? '').replace(/\D/g, '')
+            return (
+              sentToDigits &&
+              (personal.endsWith(sentToDigits.slice(-10)) ||
+                company.endsWith(sentToDigits.slice(-10)))
+            )
+          }) ?? sentMessage.lead.decisionMakers[0]
 
         if (decisionMaker) {
           await (prisma as any).crmDecisionMaker.update({
             where: { id: decisionMaker.id },
-            data:  { whatsappJid: lidJid },
+            data: { whatsappJid: lidJid },
           })
         }
 
-        console.log('[CRM-WH] vinculado LID por UPDATE messageId=%s leadId=%s remoteJid=%s crmMessageId=%s',
-          possibleMessageIds.join('|'), sentMessage.leadId, lidJid, sentMessage.id)
+        console.log(
+          '[CRM-WH] vinculado LID por UPDATE messageId=%s leadId=%s remoteJid=%s crmMessageId=%s',
+          possibleMessageIds.join('|'),
+          sentMessage.leadId,
+          lidJid,
+          sentMessage.id,
+        )
       }
 
       return reply.send({ ok: true })
     }
 
     // Ignora mensagens enviadas por nós (fromMe) e eventos que não são mensagens
-    if (eventName !== 'messages.upsert' && eventName !== 'send.message') return reply.send({ ok: true })
+    if (eventName !== 'messages.upsert' && eventName !== 'send.message')
+      return reply.send({ ok: true })
     if (payload?.key?.fromMe) {
       const outboundRemoteJid = normalizeWhatsAppJid(payload.key.remoteJid)
       const outboundMessageId = payload.key.id
-      const outboundText = payload.message?.conversation
-        ?? payload.message?.extendedTextMessage?.text
-        ?? ''
+      const outboundText =
+        payload.message?.conversation ?? payload.message?.extendedTextMessage?.text ?? ''
 
       if (outboundMessageId) {
         const recentOutbound = await (prisma as any).crmMessage.findFirst({
@@ -491,28 +557,41 @@ export async function crmRoutes(app: FastifyInstance) {
               ...(outboundRemoteJid ? { whatsappRemoteJid: outboundRemoteJid } : {}),
             },
           })
-          console.log('[CRM-WH] OUTBOUND sincronizado por evento %s leadId=%s messageId=%s remoteJid=%s',
-            eventName, recentOutbound.leadId, outboundMessageId, outboundRemoteJid || '-')
+          console.log(
+            '[CRM-WH] OUTBOUND sincronizado por evento %s leadId=%s messageId=%s remoteJid=%s',
+            eventName,
+            recentOutbound.leadId,
+            outboundMessageId,
+            outboundRemoteJid || '-',
+          )
         }
       }
       return reply.send({ ok: true })
     }
 
     // Extrai dados da mensagem
-    const remoteJid   = normalizeWhatsAppJid(payload?.key?.remoteJid)
+    const remoteJid = normalizeWhatsAppJid(payload?.key?.remoteJid)
     const participantJid = normalizeWhatsAppJid(payload?.key?.participant)
-    const senderJid   = normalizeWhatsAppJid(body.sender)
-    const messageId   = payload?.key?.id
-    const isLid       = remoteJid.endsWith('@lid')
-    const rawPhone    = phoneFromWhatsAppJid(remoteJid) || phoneFromWhatsAppJid(participantJid)
+    const senderJid = normalizeWhatsAppJid(body.sender)
+    const messageId = payload?.key?.id
+    const isLid = remoteJid.endsWith('@lid')
+    const rawPhone = phoneFromWhatsAppJid(remoteJid) || phoneFromWhatsAppJid(participantJid)
     const jidCandidates = [...new Set([remoteJid, participantJid].filter(Boolean))] as string[]
-    const pushName    = payload?.pushName ?? ''
-    const messageText = payload?.message?.conversation
-      ?? payload?.message?.extendedTextMessage?.text
-      ?? ''
+    const pushName = payload?.pushName ?? ''
+    const messageText =
+      payload?.message?.conversation ?? payload?.message?.extendedTextMessage?.text ?? ''
 
-    console.log('[CRM-WH] remoteJid=%s participantJid=%s senderJid=%s isLid=%s rawPhone=%s pushName="%s" messageId=%s textLen=%d',
-      remoteJid, participantJid || '-', senderJid || '-', isLid, rawPhone || '-', pushName, messageId || '-', messageText.length)
+    console.log(
+      '[CRM-WH] remoteJid=%s participantJid=%s senderJid=%s isLid=%s rawPhone=%s pushName="%s" messageId=%s textLen=%d',
+      remoteJid,
+      participantJid || '-',
+      senderJid || '-',
+      isLid,
+      rawPhone || '-',
+      pushName,
+      messageId || '-',
+      messageText.length,
+    )
 
     if (!messageText.trim()) {
       console.log('[CRM-WH] skip: mensagem vazia')
@@ -524,7 +603,11 @@ export async function crmRoutes(app: FastifyInstance) {
         select: { id: true, leadId: true },
       })
       if (existingMessage) {
-        console.log('[CRM-WH] skip: mensagem duplicada messageId=%s leadId=%s', messageId, existingMessage.leadId)
+        console.log(
+          '[CRM-WH] skip: mensagem duplicada messageId=%s leadId=%s',
+          messageId,
+          existingMessage.leadId,
+        )
         return reply.send({ ok: true, duplicate: true })
       }
     }
@@ -571,40 +654,54 @@ export async function crmRoutes(app: FastifyInstance) {
 
     // Estratégia 2: matching por pushName (quando WhatsApp envia @lid e oculta o telefone)
     // Normaliza removendo acentos/case e checa se cada token do pushName aparece no nome do decisor.
-    const normalize = (s: string) => s
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9 ]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9 ]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
 
     // Conta quantos tokens do pushName aparecem no nome do decisor.
     // Quanto mais alto, melhor o match. 0 = nada bateu.
     const scoreName = (raw: string | null | undefined): number => {
       if (!pushName.trim() || !raw) return 0
       const target = normalize(raw)
-      const tokens = normalize(pushName).split(' ').filter((t) => t.length >= 3)
+      const tokens = normalize(pushName)
+        .split(' ')
+        .filter((t) => t.length >= 3)
       if (tokens.length === 0) return 0
       return tokens.filter((t) => target.includes(t)).length
     }
 
-    console.log('[CRM-WH] candidatos carregados: %d decisor(es), %d lead(s)', candidates.length, leadCandidates.length)
-
-    let decisionMaker = candidates.find(
-      (dm) => matchJid((dm as any).whatsappJid)
+    console.log(
+      '[CRM-WH] candidatos carregados: %d decisor(es), %d lead(s)',
+      candidates.length,
+      leadCandidates.length,
     )
+
+    let decisionMaker = candidates.find((dm) => matchJid((dm as any).whatsappJid))
     if (decisionMaker) {
-      console.log('[CRM-WH] match por JID â†’ decisor="%s" leadId=%s',
-        decisionMaker.name, decisionMaker.lead.id)
+      console.log(
+        '[CRM-WH] match por JID â†’ decisor="%s" leadId=%s',
+        decisionMaker.name,
+        decisionMaker.lead.id,
+      )
     }
 
     decisionMaker ??= candidates.find(
-      (dm) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany) || matchPhone(dm.lead.companyPhone)
+      (dm) =>
+        matchPhone(dm.phonePersonal) ||
+        matchPhone(dm.phoneCompany) ||
+        matchPhone(dm.lead.companyPhone),
     )
     if (decisionMaker) {
-      console.log('[CRM-WH] match por TELEFONE → decisor="%s" leadId=%s',
-        decisionMaker.name, decisionMaker.lead.id)
+      console.log(
+        '[CRM-WH] match por TELEFONE → decisor="%s" leadId=%s',
+        decisionMaker.name,
+        decisionMaker.lead.id,
+      )
     }
 
     // Fallback para LID/sem-telefone — usa pushName e ranqueia
@@ -615,9 +712,12 @@ export async function crmRoutes(app: FastifyInstance) {
         .filter((s: { dm: Candidate; score: number }) => s.score > 0)
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
 
-      console.log('[CRM-WH] tentando match por NOME (pushName="%s") → ranking: [%s]',
+      console.log(
+        '[CRM-WH] tentando match por NOME (pushName="%s") → ranking: [%s]',
         pushName,
-        scored.map((s: { dm: Candidate; score: number }) => `${s.dm.name}=${s.score}`).join(', ') || 'vazio')
+        scored.map((s: { dm: Candidate; score: number }) => `${s.dm.name}=${s.score}`).join(', ') ||
+          'vazio',
+      )
 
       // Aceita se o top tem score estritamente maior que o segundo (winner único)
       if (scored.length === 1) {
@@ -627,8 +727,11 @@ export async function crmRoutes(app: FastifyInstance) {
       }
 
       if (decisionMaker) {
-        console.log('[CRM-WH] match por NOME → decisor="%s" leadId=%s',
-          decisionMaker.name, decisionMaker.lead.id)
+        console.log(
+          '[CRM-WH] match por NOME → decisor="%s" leadId=%s',
+          decisionMaker.name,
+          decisionMaker.lead.id,
+        )
       } else if (scored.length > 1) {
         console.log('[CRM-WH] skip: empate de %d decisores com mesmo score', scored.length)
       }
@@ -670,17 +773,18 @@ export async function crmRoutes(app: FastifyInstance) {
     }
 
     if (!lead && rawPhone) {
-      lead = leadCandidates.find((item) =>
-        matchPhone(item.companyPhone) ||
-        item.decisionMakers.some((dm) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany))
+      lead = leadCandidates.find(
+        (item) =>
+          matchPhone(item.companyPhone) ||
+          item.decisionMakers.some(
+            (dm) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany),
+          ),
       ) as any
       if (lead) {
-        const matchedDm = lead.decisionMakers.find((dm: any) =>
-          matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany)
+        const matchedDm = lead.decisionMakers.find(
+          (dm: any) => matchPhone(dm.phonePersonal) || matchPhone(dm.phoneCompany),
         )
-        decisionMaker = matchedDm
-          ? ({ ...matchedDm, lead } as any)
-          : undefined
+        decisionMaker = matchedDm ? ({ ...matchedDm, lead } as any) : undefined
         console.log('[CRM-WH] match por TELEFONE do LEAD -> leadId=%s', lead.id)
       }
     }
@@ -689,16 +793,25 @@ export async function crmRoutes(app: FastifyInstance) {
       const scoredLeads = leadCandidates
         .map((item) => ({
           lead: item,
-          score: Math.max(scoreName(item.companyName), ...item.decisionMakers.map((dm) => scoreName(dm.name)), 0),
+          score: Math.max(
+            scoreName(item.companyName),
+            ...item.decisionMakers.map((dm) => scoreName(dm.name)),
+            0,
+          ),
         }))
         .filter((item) => item.score > 0)
         .sort((a, b) => b.score - a.score)
 
-      console.log('[CRM-WH] tentando match por NOME do LEAD (pushName="%s") -> ranking: [%s]',
+      console.log(
+        '[CRM-WH] tentando match por NOME do LEAD (pushName="%s") -> ranking: [%s]',
         pushName,
-        scoredLeads.map((item) => `${item.lead.companyName}=${item.score}`).join(', ') || 'vazio')
+        scoredLeads.map((item) => `${item.lead.companyName}=${item.score}`).join(', ') || 'vazio',
+      )
 
-      if (scoredLeads.length === 1 || (scoredLeads.length > 1 && scoredLeads[0].score > scoredLeads[1].score)) {
+      if (
+        scoredLeads.length === 1 ||
+        (scoredLeads.length > 1 && scoredLeads[0].score > scoredLeads[1].score)
+      ) {
         const selectedLead = scoredLeads[0].lead
         lead = selectedLead as any
         decisionMaker = selectedLead.decisionMakers[0]
@@ -727,44 +840,63 @@ export async function crmRoutes(app: FastifyInstance) {
         .filter((message: any) => message.lead?.isActive)
         .map((message: any, index: number) => ({
           message,
-          score: Math.max(
-            scoreName(message.lead.companyName),
-            ...message.lead.decisionMakers.map((dm: any) => scoreName(dm.name)),
-            0
-          ) + (message.sentBy === 'HUMAN' ? 2 : 0) + Math.max(0, 10 - index) / 100,
+          score:
+            Math.max(
+              scoreName(message.lead.companyName),
+              ...message.lead.decisionMakers.map((dm: any) => scoreName(dm.name)),
+              0,
+            ) +
+            (message.sentBy === 'HUMAN' ? 2 : 0) +
+            Math.max(0, 10 - index) / 100,
         }))
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
 
-      console.log('[CRM-WH] tentando fallback por OUTBOUND recente (pushName="%s") -> ranking: [%s]',
+      console.log(
+        '[CRM-WH] tentando fallback por OUTBOUND recente (pushName="%s") -> ranking: [%s]',
         pushName,
         scoredRecentOutbound
           .map((item: any) => `${item.message.lead.companyName}=${item.score.toFixed(2)}`)
-          .join(', ') || 'vazio')
+          .join(', ') || 'vazio',
+      )
 
       const best = scoredRecentOutbound[0]
       const second = scoredRecentOutbound[1]
-      if (best && (recentOutboundMessages.length === 1 || best.score > (second?.score ?? 0) + 0.5)) {
+      if (
+        best &&
+        (recentOutboundMessages.length === 1 || best.score > (second?.score ?? 0) + 0.5)
+      ) {
         const selectedLead = best.message.lead
         lead = selectedLead
         decisionMaker = selectedLead.decisionMakers[0]
           ? ({ ...selectedLead.decisionMakers[0], lead: selectedLead } as any)
           : undefined
-        console.log('[CRM-WH] match por OUTBOUND recente -> leadId=%s crmMessageId=%s',
-          selectedLead.id, best.message.id)
+        console.log(
+          '[CRM-WH] match por OUTBOUND recente -> leadId=%s crmMessageId=%s',
+          selectedLead.id,
+          best.message.id,
+        )
       }
     }
 
     if (!lead || !lead.isActive) {
-      console.log('[CRM-WH] DESCARTADO: nenhum lead/decisor ativo encontrado (rawPhone=%s pushName="%s" remoteJid=%s)', rawPhone || '-', pushName, remoteJid || '-')
+      console.log(
+        '[CRM-WH] DESCARTADO: nenhum lead/decisor ativo encontrado (rawPhone=%s pushName="%s" remoteJid=%s)',
+        rawPhone || '-',
+        pushName,
+        remoteJid || '-',
+      )
       return reply.send({ ok: true })
     }
 
     if (remoteJid && (!decisionMaker || (decisionMaker as any).whatsappJid !== remoteJid)) {
-      await (prisma as any).crmLead.update({ where: { id: lead.id }, data: { whatsappJid: remoteJid } })
+      await (prisma as any).crmLead.update({
+        where: { id: lead.id },
+        data: { whatsappJid: remoteJid },
+      })
       if (decisionMaker) {
         await (prisma as any).crmDecisionMaker.update({
           where: { id: decisionMaker.id },
-          data:  { whatsappJid: remoteJid },
+          data: { whatsappJid: remoteJid },
         })
       }
     }
@@ -772,20 +904,24 @@ export async function crmRoutes(app: FastifyInstance) {
     // Salva mensagem recebida
     const inboundMessage = await (prisma as any).crmMessage?.create({
       data: {
-        leadId:     lead.id,
-        direction:  'INBOUND',
-        content:    messageText,
+        leadId: lead.id,
+        direction: 'INBOUND',
+        content: messageText,
         senderName: decisionMaker?.name ?? (pushName || lead.companyName),
         whatsappRemoteJid: remoteJid || null,
         whatsappMessageId: messageId ?? null,
       },
     })
-    console.log('[CRM-WH] MENSAGEM INBOUND SALVA leadId=%s messageId=%s crmMessageId=%s',
-      lead.id, messageId || '-', inboundMessage?.id ?? '-')
+    console.log(
+      '[CRM-WH] MENSAGEM INBOUND SALVA leadId=%s messageId=%s crmMessageId=%s',
+      lead.id,
+      messageId || '-',
+      inboundMessage?.id ?? '-',
+    )
 
     // Busca histórico de conversas IA para este lead
     const historyEntries = await prisma.crmStageHistory.findMany({
-      where:   { leadId: lead.id, isAiMove: true },
+      where: { leadId: lead.id, isAiMove: true },
       orderBy: { createdAt: 'asc' },
     })
 
@@ -804,19 +940,27 @@ export async function crmRoutes(app: FastifyInstance) {
     // Busca produtos e skills ativos para contexto da IA
     const [products, skills] = await Promise.all([
       (prisma as any).crmProduct?.findMany({ where: { isActive: true } }) ?? [],
-      (prisma as any).crmSkill?.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } }) ?? [],
+      (prisma as any).crmSkill?.findMany({
+        where: { isActive: true },
+        orderBy: { order: 'asc' },
+      }) ?? [],
     ])
 
     // Processa com IA
-    const { reply: aiReply, nextStage, tokensUsed, recommendedProductId } =
-      await crmAi.handleLeadReply(lead, messageText, conversationHistory, products, skills)
+    const {
+      reply: aiReply,
+      nextStage,
+      tokensUsed,
+      recommendedProductId,
+    } = await crmAi.handleLeadReply(lead, messageText, conversationHistory, products, skills)
 
     if (!aiReply) return reply.send({ ok: true })
 
     // Envia a resposta da IA via WhatsApp
     const { WhatsAppService } = await import('../services/WhatsAppService')
     const whatsapp = new WhatsAppService()
-    const phone = decisionMaker?.phonePersonal ?? decisionMaker?.phoneCompany ?? lead.companyPhone ?? rawPhone
+    const phone =
+      decisionMaker?.phonePersonal ?? decisionMaker?.phoneCompany ?? lead.companyPhone ?? rawPhone
     if (!phone) return reply.send({ ok: true })
     const sendResult = await whatsapp.sendMessageWithResult({ phone, message: aiReply })
     const cleanPhone = phone.replace(/\D/g, '')
@@ -824,10 +968,10 @@ export async function crmRoutes(app: FastifyInstance) {
     // Salva mensagem enviada pela IA
     await (prisma as any).crmMessage?.create({
       data: {
-        leadId:    lead.id,
+        leadId: lead.id,
         direction: 'OUTBOUND',
-        content:   aiReply,
-        sentBy:    'AI',
+        content: aiReply,
+        sentBy: 'AI',
         senderName: 'IA Comercial',
         whatsappRemoteJid: sendResult.remoteJid ?? `${cleanPhone}@s.whatsapp.net`,
         whatsappMessageId: sendResult.messageId ?? null,
@@ -837,7 +981,7 @@ export async function crmRoutes(app: FastifyInstance) {
     // Se IA recomendou um produto, associa ao lead automaticamente
     if (recommendedProductId) {
       await prisma.crmLeadProduct.upsert({
-        where:  { leadId_productId: { leadId: lead.id, productId: recommendedProductId } },
+        where: { leadId_productId: { leadId: lead.id, productId: recommendedProductId } },
         create: { leadId: lead.id, productId: recommendedProductId, suggestedByAi: true },
         update: {},
       })
@@ -846,26 +990,27 @@ export async function crmRoutes(app: FastifyInstance) {
     // Atualiza conversa e avança etapa se necessário
     const newConversation: ConvMsg[] = [
       ...conversationHistory,
-      { role: 'user',      content: messageText },
+      { role: 'user', content: messageText },
       { role: 'assistant', content: aiReply },
     ]
 
     if (nextStage && nextStage !== lead.stage) {
       const lastInStage = await prisma.crmLead.findFirst({
-        where: { stage: nextStage }, orderBy: { position: 'desc' },
+        where: { stage: nextStage },
+        orderBy: { position: 'desc' },
       })
       await prisma.$transaction([
         prisma.crmLead.update({
           where: { id: lead.id },
-          data:  { stage: nextStage, position: (lastInStage?.position ?? -1) + 1 },
+          data: { stage: nextStage, position: (lastInStage?.position ?? -1) + 1 },
         }),
         prisma.crmStageHistory.create({
           data: {
-            leadId:         lead.id,
-            fromStage:      lead.stage,
-            toStage:        nextStage,
-            isAiMove:       true,
-            notes:          `IA avançou etapa automaticamente (${tokensUsed} tokens)`,
+            leadId: lead.id,
+            fromStage: lead.stage,
+            toStage: nextStage,
+            isAiMove: true,
+            notes: `IA avançou etapa automaticamente (${tokensUsed} tokens)`,
             aiConversation: JSON.parse(JSON.stringify(newConversation)),
           },
         }),
@@ -873,11 +1018,11 @@ export async function crmRoutes(app: FastifyInstance) {
     } else {
       await prisma.crmStageHistory.create({
         data: {
-          leadId:         lead.id,
-          fromStage:      lead.stage,
-          toStage:        lead.stage,
-          isAiMove:       true,
-          notes:          `Resposta IA (${tokensUsed} tokens)`,
+          leadId: lead.id,
+          fromStage: lead.stage,
+          toStage: lead.stage,
+          isAiMove: true,
+          notes: `Resposta IA (${tokensUsed} tokens)`,
           aiConversation: JSON.parse(JSON.stringify(newConversation)),
         },
       })
@@ -895,7 +1040,7 @@ export async function crmRoutes(app: FastifyInstance) {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const messages = await (prisma as any).crmMessage.findMany({
-      where:   { leadId: id },
+      where: { leadId: id },
       orderBy: { createdAt: 'asc' },
     })
     return reply.send({ messages })
@@ -910,20 +1055,25 @@ export async function crmRoutes(app: FastifyInstance) {
     if (!content?.trim()) throw new AppError('Mensagem não pode estar vazia', 400)
 
     const lead = await prisma.crmLead.findUnique({
-      where:   { id },
+      where: { id },
       include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }] } },
     })
     if (!lead) throw new AppError('Lead não encontrado', 404)
 
     // Busca telefone: decisor principal → qualquer decisor → telefone da empresa
     const primary = lead.decisionMakers[0]
-    const phone   = primary?.phonePersonal
-                 ?? primary?.phoneCompany
-                 ?? lead.decisionMakers.find(d => d.phonePersonal)?.phonePersonal
-                 ?? lead.decisionMakers.find(d => d.phoneCompany)?.phoneCompany
-                 ?? lead.companyPhone
+    const phone =
+      primary?.phonePersonal ??
+      primary?.phoneCompany ??
+      lead.decisionMakers.find((d) => d.phonePersonal)?.phonePersonal ??
+      lead.decisionMakers.find((d) => d.phoneCompany)?.phoneCompany ??
+      lead.companyPhone
 
-    if (!phone) throw new AppError('Nenhum número de WhatsApp encontrado para este lead. Cadastre o telefone do decisor.', 400)
+    if (!phone)
+      throw new AppError(
+        'Nenhum número de WhatsApp encontrado para este lead. Cadastre o telefone do decisor.',
+        400,
+      )
 
     // Envia via WhatsApp
     const { WhatsAppService } = await import('../services/WhatsAppService')
@@ -934,87 +1084,111 @@ export async function crmRoutes(app: FastifyInstance) {
     // Salva mensagem
     const message = await (prisma as any).crmMessage.create({
       data: {
-        leadId:      id,
-        direction:   'OUTBOUND',
-        content:     content.trim(),
-        sentBy:      'HUMAN',
-        senderName:  request.user.name,
+        leadId: id,
+        direction: 'OUTBOUND',
+        content: content.trim(),
+        sentBy: 'HUMAN',
+        senderName: request.user.name,
         sentByUserId: request.user.id,
         whatsappRemoteJid: sendResult.remoteJid ?? `${cleanPhone}@s.whatsapp.net`,
         whatsappMessageId: sendResult.messageId ?? null,
       },
     })
-    console.log('[CRM-WH] MENSAGEM OUTBOUND SALVA leadId=%s messageId=%s remoteJid=%s crmMessageId=%s',
-      id, sendResult.messageId ?? '-', sendResult.remoteJid ?? `${cleanPhone}@s.whatsapp.net`, message.id)
+    console.log(
+      '[CRM-WH] MENSAGEM OUTBOUND SALVA leadId=%s messageId=%s remoteJid=%s crmMessageId=%s',
+      id,
+      sendResult.messageId ?? '-',
+      sendResult.remoteJid ?? `${cleanPhone}@s.whatsapp.net`,
+      message.id,
+    )
 
     return reply.status(201).send({ message })
   })
 
   // ── POST /crm/leads/:id/send-first-message — disparo manual ─
-  app.post('/crm/leads/:id/send-first-message', { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
-    const { id } = request.params as { id: string }
+  app.post(
+    '/crm/leads/:id/send-first-message',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
+      const { id } = request.params as { id: string }
 
-    if (!crmAi.isConfigured) throw new AppError('IA não configurada (ANTHROPIC_API_KEY ausente)', 503)
+      if (!crmAi.isConfigured)
+        throw new AppError('IA não configurada (ANTHROPIC_API_KEY ausente)', 503)
 
-    const [lead, products, skills] = await Promise.all([
-      prisma.crmLead.findUnique({
-        where:   { id },
-        include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }] } },
-      }),
-      (prisma as any).crmProduct?.findMany({ where: { isActive: true } }) ?? [],
-      (prisma as any).crmSkill?.findMany({ where: { isActive: true }, orderBy: { order: 'asc' } }) ?? [],
-    ])
+      const [lead, products, skills] = await Promise.all([
+        prisma.crmLead.findUnique({
+          where: { id },
+          include: { decisionMakers: { orderBy: [{ isPrimary: 'desc' }] } },
+        }),
+        (prisma as any).crmProduct?.findMany({ where: { isActive: true } }) ?? [],
+        (prisma as any).crmSkill?.findMany({
+          where: { isActive: true },
+          orderBy: { order: 'asc' },
+        }) ?? [],
+      ])
 
-    if (!lead) throw new AppError('Lead não encontrado', 404)
+      if (!lead) throw new AppError('Lead não encontrado', 404)
 
-    const primary = lead.decisionMakers[0]
-    if (!primary) throw new AppError('Lead sem decisor cadastrado. Adicione um decisor na aba Decisores.', 400)
+      const primary = lead.decisionMakers[0]
+      if (!primary)
+        throw new AppError(
+          'Lead sem decisor cadastrado. Adicione um decisor na aba Decisores.',
+          400,
+        )
 
-    const phone = primary.phonePersonal ?? primary.phoneCompany ?? lead.companyPhone
-    if (!phone) throw new AppError(
-      `Nenhum telefone encontrado. Preencha o telefone do decisor "${primary.name}" na aba Decisores.`,
-      400
-    )
+      const phone = primary.phonePersonal ?? primary.phoneCompany ?? lead.companyPhone
+      if (!phone)
+        throw new AppError(
+          `Nenhum telefone encontrado. Preencha o telefone do decisor "${primary.name}" na aba Decisores.`,
+          400,
+        )
 
-    const msg = await crmAi.sendFirstMessage(lead, primary, products, skills)
-    if (!msg) throw new AppError('A IA não conseguiu gerar a mensagem. Verifique o ANTHROPIC_API_KEY no App Runner.', 500)
+      const msg = await crmAi.sendFirstMessage(lead, primary, products, skills)
+      if (!msg)
+        throw new AppError(
+          'A IA não conseguiu gerar a mensagem. Verifique o ANTHROPIC_API_KEY no App Runner.',
+          500,
+        )
 
-    // Salva como mensagem e no histórico
-    await Promise.all([
-      (prisma as any).crmMessage?.create({
-        data: {
-          leadId: id,
-          direction: 'OUTBOUND',
-          content: msg.message,
-          sentBy: 'AI',
-          senderName: 'IA Comercial',
-          whatsappRemoteJid: msg.whatsappRemoteJid ?? null,
-          whatsappMessageId: msg.whatsappMessageId ?? null,
-        },
-      }),
-      prisma.crmStageHistory.create({
-        data: {
-          leadId:     id,
-          fromStage:  lead.stage,
-          toStage:    lead.stage,
-          isAiMove:   true,
-          notes:      'Primeira mensagem enviada manualmente pela IA',
-          aiConversation: JSON.parse(JSON.stringify([{ role: 'assistant', content: msg.message }])),
-        },
-      }),
-    ])
+      // Salva como mensagem e no histórico
+      await Promise.all([
+        (prisma as any).crmMessage?.create({
+          data: {
+            leadId: id,
+            direction: 'OUTBOUND',
+            content: msg.message,
+            sentBy: 'AI',
+            senderName: 'IA Comercial',
+            whatsappRemoteJid: msg.whatsappRemoteJid ?? null,
+            whatsappMessageId: msg.whatsappMessageId ?? null,
+          },
+        }),
+        prisma.crmStageHistory.create({
+          data: {
+            leadId: id,
+            fromStage: lead.stage,
+            toStage: lead.stage,
+            isAiMove: true,
+            notes: 'Primeira mensagem enviada manualmente pela IA',
+            aiConversation: JSON.parse(
+              JSON.stringify([{ role: 'assistant', content: msg.message }]),
+            ),
+          },
+        }),
+      ])
 
-    return reply.send({ ok: true, message: msg.message })
-  })
+      return reply.send({ ok: true, message: msg.message })
+    },
+  )
 
   // ── GET /crm/ai/status — verifica se IA está configurada ─
   app.get('/crm/ai/status', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     return reply.send({
-      configured:  crmAi.isConfigured,
-      model:       'claude-opus-4-7',
-      apifyReady:  !!(env.APIFY_API_TOKEN && env.APIFY_ACTOR_ID),
+      configured: crmAi.isConfigured,
+      model: 'claude-opus-4-7',
+      apifyReady: !!(env.APIFY_API_TOKEN && env.APIFY_ACTOR_ID),
     })
   })
 
@@ -1026,7 +1200,7 @@ export async function crmRoutes(app: FastifyInstance) {
   app.get('/crm/products', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const products = await prisma.crmProduct.findMany({
-      where:   { isActive: true },
+      where: { isActive: true },
       orderBy: { createdAt: 'asc' },
     })
     return reply.send({ products })
@@ -1036,18 +1210,21 @@ export async function crmRoutes(app: FastifyInstance) {
   app.post('/crm/products', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const body = request.body as {
-      name: string; description?: string; price?: string
-      videoUrl?: string; features?: string[]
+      name: string
+      description?: string
+      price?: string
+      videoUrl?: string
+      features?: string[]
     }
     if (!body.name?.trim()) throw new AppError('Nome do produto é obrigatório', 400)
 
     const product = await prisma.crmProduct.create({
       data: {
-        name:        body.name.trim(),
+        name: body.name.trim(),
         description: body.description?.trim() || null,
-        price:       body.price?.trim() || null,
-        videoUrl:    body.videoUrl?.trim() || null,
-        features:    body.features?.length ? body.features : null,
+        price: body.price?.trim() || null,
+        videoUrl: body.videoUrl?.trim() || null,
+        features: body.features?.length ? body.features : null,
       },
     })
     return reply.status(201).send({ product })
@@ -1058,17 +1235,20 @@ export async function crmRoutes(app: FastifyInstance) {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
     const body = request.body as {
-      name?: string; description?: string; price?: string
-      videoUrl?: string; features?: string[]
+      name?: string
+      description?: string
+      price?: string
+      videoUrl?: string
+      features?: string[]
     }
     const product = await prisma.crmProduct.update({
       where: { id },
       data: {
-        ...(body.name        !== undefined && { name:        body.name.trim() }),
+        ...(body.name !== undefined && { name: body.name.trim() }),
         ...(body.description !== undefined && { description: body.description?.trim() || null }),
-        ...(body.price       !== undefined && { price:       body.price?.trim() || null }),
-        ...(body.videoUrl    !== undefined && { videoUrl:    body.videoUrl?.trim() || null }),
-        ...(body.features    !== undefined && { features:    body.features }),
+        ...(body.price !== undefined && { price: body.price?.trim() || null }),
+        ...(body.videoUrl !== undefined && { videoUrl: body.videoUrl?.trim() || null }),
+        ...(body.features !== undefined && { features: body.features }),
       },
     })
     return reply.send({ product })
@@ -1083,25 +1263,33 @@ export async function crmRoutes(app: FastifyInstance) {
   })
 
   // ── POST /crm/leads/:id/products/:productId ───────────
-  app.post('/crm/leads/:id/products/:productId', { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
-    const { id, productId } = request.params as { id: string; productId: string }
-    const lp = await prisma.crmLeadProduct.upsert({
-      where:  { leadId_productId: { leadId: id, productId } },
-      create: { leadId: id, productId, suggestedByAi: false },
-      update: {},
-      include: { product: true },
-    })
-    return reply.status(201).send({ leadProduct: lp })
-  })
+  app.post(
+    '/crm/leads/:id/products/:productId',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
+      const { id, productId } = request.params as { id: string; productId: string }
+      const lp = await prisma.crmLeadProduct.upsert({
+        where: { leadId_productId: { leadId: id, productId } },
+        create: { leadId: id, productId, suggestedByAi: false },
+        update: {},
+        include: { product: true },
+      })
+      return reply.status(201).send({ leadProduct: lp })
+    },
+  )
 
   // ── DELETE /crm/leads/:id/products/:productId ─────────
-  app.delete('/crm/leads/:id/products/:productId', { preHandler: [authenticate] }, async (request, reply) => {
-    if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
-    const { id, productId } = request.params as { id: string; productId: string }
-    await prisma.crmLeadProduct.deleteMany({ where: { leadId: id, productId } })
-    return reply.send({ ok: true })
-  })
+  app.delete(
+    '/crm/leads/:id/products/:productId',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
+      const { id, productId } = request.params as { id: string; productId: string }
+      await prisma.crmLeadProduct.deleteMany({ where: { leadId: id, productId } })
+      return reply.send({ ok: true })
+    },
+  )
 
   // ═══════════════════════════════════════════════════════
   //  SKILLS DE VENDAS
@@ -1115,16 +1303,22 @@ export async function crmRoutes(app: FastifyInstance) {
 
   app.post('/crm/skills', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
-    const body = request.body as { name: string; description?: string; content: string; trigger?: string }
-    if (!body.name?.trim() || !body.content?.trim()) throw new AppError('Nome e conteúdo são obrigatórios', 400)
+    const body = request.body as {
+      name: string
+      description?: string
+      content: string
+      trigger?: string
+    }
+    if (!body.name?.trim() || !body.content?.trim())
+      throw new AppError('Nome e conteúdo são obrigatórios', 400)
     const last = await (prisma as any).crmSkill.findFirst({ orderBy: { order: 'desc' } })
     const skill = await (prisma as any).crmSkill.create({
       data: {
-        name:        body.name.trim(),
+        name: body.name.trim(),
         description: body.description?.trim() || null,
-        content:     body.content.trim(),
-        trigger:     body.trigger?.trim() || null,
-        order:       (last?.order ?? -1) + 1,
+        content: body.content.trim(),
+        trigger: body.trigger?.trim() || null,
+        order: (last?.order ?? -1) + 1,
       },
     })
     return reply.status(201).send({ skill })
@@ -1133,16 +1327,23 @@ export async function crmRoutes(app: FastifyInstance) {
   app.patch('/crm/skills/:id', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     const { id } = request.params as { id: string }
-    const body = request.body as { name?: string; description?: string; content?: string; trigger?: string; isActive?: boolean; order?: number }
+    const body = request.body as {
+      name?: string
+      description?: string
+      content?: string
+      trigger?: string
+      isActive?: boolean
+      order?: number
+    }
     const skill = await (prisma as any).crmSkill.update({
       where: { id },
       data: {
-        ...(body.name        !== undefined && { name:        body.name.trim() }),
+        ...(body.name !== undefined && { name: body.name.trim() }),
         ...(body.description !== undefined && { description: body.description?.trim() || null }),
-        ...(body.content     !== undefined && { content:     body.content.trim() }),
-        ...(body.trigger     !== undefined && { trigger:     body.trigger?.trim() || null }),
-        ...(body.isActive    !== undefined && { isActive:    body.isActive }),
-        ...(body.order       !== undefined && { order:       body.order }),
+        ...(body.content !== undefined && { content: body.content.trim() }),
+        ...(body.trigger !== undefined && { trigger: body.trigger?.trim() || null }),
+        ...(body.isActive !== undefined && { isActive: body.isActive }),
+        ...(body.order !== undefined && { order: body.order }),
       },
     })
     return reply.send({ skill })
@@ -1163,7 +1364,7 @@ export async function crmRoutes(app: FastifyInstance) {
   app.post('/crm/apify/run', { preHandler: [authenticate] }, async (request, reply) => {
     if (!canCrm(request.user)) throw new AppError('Acesso negado', 403)
     if (!env.APIFY_API_TOKEN) throw new AppError('APIFY_API_TOKEN não configurado', 503)
-    if (!env.APIFY_ACTOR_ID)  throw new AppError('APIFY_ACTOR_ID não configurado', 503)
+    if (!env.APIFY_ACTOR_ID) throw new AppError('APIFY_ACTOR_ID não configurado', 503)
 
     const body = request.body as Record<string, unknown> | undefined
     const input = body ?? {}
@@ -1175,8 +1376,8 @@ export async function crmRoutes(app: FastifyInstance) {
         { headers: { Authorization: `Bearer ${env.APIFY_API_TOKEN!}` } },
       )
       return reply.send({
-        runId:   data.data?.id,
-        status:  data.data?.status,
+        runId: data.data?.id,
+        status: data.data?.status,
         message: 'Ator Apify iniciado. Os leads chegarão via webhook quando o run concluir.',
       })
     } catch (err: any) {
@@ -1203,17 +1404,17 @@ export async function crmRoutes(app: FastifyInstance) {
 }
 
 interface EvolutionWebhookPayload {
-  event:    string
+  event: string
   instance: string
-  sender?:  string
+  sender?: string
   data?: EvolutionWebhookEventData | EvolutionWebhookEventData[]
 }
 
 interface EvolutionWebhookEventData {
   key?: {
     remoteJid?: string
-    fromMe?:    boolean
-    id?:        string
+    fromMe?: boolean
+    id?: string
     participant?: string
   }
   keyId?: string
@@ -1225,7 +1426,7 @@ interface EvolutionWebhookEventData {
   status?: string
   pushName?: string
   message?: {
-    conversation?:          string
+    conversation?: string
     extendedTextMessage?: { text?: string }
   }
   messageTimestamp?: number
