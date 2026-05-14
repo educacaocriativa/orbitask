@@ -68,9 +68,9 @@ const STAGES: { id: CrmStage; label: string; color: string; emoji: string }[] = 
   { id: 'LEAD',               label: 'Lead',                color: '#6366f1', emoji: '🎯' },
   { id: 'PRIMEIRO_CONTATO',   label: 'Primeiro Contato',    color: '#06b6d4', emoji: '👋' },
   { id: 'NIVEL_CONSCIENCIA_1',label: 'Nível de Consciência 1', color: '#8b5cf6', emoji: '💡' },
-  { id: 'NIVEL_CONSCIENCIA_2',label: 'Nível de Consciência 2', color: '#a855f7', emoji: '🔍' },
-  { id: 'NIVEL_CONSCIENCIA_3',label: 'Nível de Consciência 3', color: '#ec4899', emoji: '🎯' },
-  { id: 'FINALIZADO',         label: 'Finalizado',          color: '#f59e0b', emoji: '✅' },
+  { id: 'NIVEL_CONSCIENCIA_2',label: 'Aguardando Apresentação', color: '#a855f7', emoji: '🔍' },
+  { id: 'NIVEL_CONSCIENCIA_3',label: 'Apresentação Realizada', color: '#ec4899', emoji: '🎯' },
+  { id: 'FINALIZADO',         label: 'Orçamento',          color: '#f59e0b', emoji: '✅' },
   { id: 'FECHADO',            label: 'Fechado com Cliente', color: '#10b981', emoji: '🏆' },
 ]
 

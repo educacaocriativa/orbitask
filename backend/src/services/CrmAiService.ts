@@ -55,9 +55,9 @@ const STAGE_LABELS: Record<CrmStage, string> = {
   LEAD:               'Lead',
   PRIMEIRO_CONTATO:   'Primeiro Contato',
   NIVEL_CONSCIENCIA_1:'Nível de Consciência 1 — reconhece o problema',
-  NIVEL_CONSCIENCIA_2:'Nível de Consciência 2 — conhece soluções do mercado',
-  NIVEL_CONSCIENCIA_3:'Nível de Consciência 3 — avaliando nossa solução',
-  FINALIZADO:         'Finalizado — proposta em negociação',
+  NIVEL_CONSCIENCIA_2:'Aguardando Apresentação',
+  NIVEL_CONSCIENCIA_3:'Apresentação Realizada',
+  FINALIZADO:         'Orçamento',
   FECHADO:            'Fechado com o Cliente',
 }
 
