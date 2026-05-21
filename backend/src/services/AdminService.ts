@@ -103,6 +103,7 @@ export class AdminService {
   }
 
   // ── Get access logs (dashboard) ─────────────────────────
+  // When userId is set, returns the FULL history for that user (no take cap).
   async getAccessLogs(options: {
     userId?: string
     action?: string
@@ -112,7 +113,6 @@ export class AdminService {
     limit?: number
   }) {
     const { userId, action, from, to, page = 1, limit = 50 } = options
-    const skip = (page - 1) * limit
 
     const where = {
       ...(userId && { userId }),
@@ -127,11 +127,15 @@ export class AdminService {
         : {}),
     }
 
+    // Full history when filtering by user; paginated otherwise.
+    const skip   = userId ? undefined : (page - 1) * limit
+    const take   = userId ? undefined : limit
+
     const [logs, total] = await prisma.$transaction([
       prisma.accessLog.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy: { createdAt: 'desc' },
         include: {
           user: {
@@ -142,7 +146,16 @@ export class AdminService {
       prisma.accessLog.count({ where }),
     ])
 
-    return { logs, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } }
+    const effectiveLimit = take ?? total
+    return {
+      logs,
+      pagination: {
+        total,
+        page: userId ? 1 : page,
+        limit: effectiveLimit,
+        totalPages: userId ? 1 : Math.ceil(total / limit),
+      },
+    }
   }
 
   // ── Get files uploaded by a user ───────────────────────

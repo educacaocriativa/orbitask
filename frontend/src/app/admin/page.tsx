@@ -540,6 +540,8 @@ export default function AdminPage() {
   const [logSearch, setLogSearch]   = useState('')
   const [selectedLog, setSelectedLog] = useState<Log | null>(null)
   const [syncingDrive, setSyncingDrive] = useState(false)
+  const [logUserFilter, setLogUserFilter] = useState<string>('') // userId filter; '' = all (recent 50)
+  const [loadingLogs, setLoadingLogs]     = useState(false)
 
   useEffect(() => {
     Promise.all([
@@ -549,6 +551,19 @@ export default function AdminPage() {
       api.get('/admin/whatsapp/status').then(({ data }) => setWhatsappStatus(data)),
     ]).catch(() => toast.error('Erro ao carregar dados')).finally(() => setIsLoading(false))
   }, [])
+
+  // Refetch logs when user filter changes
+  useEffect(() => {
+    if (isLoading) return // skip during initial bootstrap
+    setLoadingLogs(true)
+    const url = logUserFilter
+      ? `/admin/logs?userId=${logUserFilter}&limit=10000`
+      : '/admin/logs?limit=50'
+    api.get(url)
+      .then(({ data }) => setLogs(data.logs))
+      .catch(() => toast.error('Erro ao carregar logs'))
+      .finally(() => setLoadingLogs(false))
+  }, [logUserFilter])
 
   async function syncDrive() {
     setSyncingDrive(true)
@@ -817,11 +832,31 @@ export default function AdminPage() {
             {/* LOGS */}
             {activeTab === 'logs' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <input value={logSearch} onChange={(e) => setLogSearch(e.target.value)}
                     placeholder="🔍 Filtrar por usuário ou ação..."
                     className="w-full max-w-xs px-4 py-2 rounded-xl text-sm font-body input-space" />
-                  <span className="text-xs text-white/65 font-body font-semibold">{filteredLogs.length} registros</span>
+                  <select
+                    value={logUserFilter}
+                    onChange={(e) => setLogUserFilter(e.target.value)}
+                    className="px-3 py-2 rounded-xl text-sm font-body input-space max-w-xs"
+                  >
+                    <option value="">📡 Últimos 50 registros (todos)</option>
+                    {users.slice().sort((a, b) => a.name.localeCompare(b.name)).map((u) => (
+                      <option key={u.id} value={u.id}>👤 {u.name} — histórico completo</option>
+                    ))}
+                  </select>
+                  {logUserFilter && (
+                    <button
+                      onClick={() => setLogUserFilter('')}
+                      className="text-xs px-2.5 py-1.5 rounded-lg border border-white/15 text-white/60 hover:text-white/90 hover:bg-white/5 font-body font-bold transition-all"
+                    >
+                      ✕ limpar
+                    </button>
+                  )}
+                  <span className="text-xs text-white/65 font-body font-semibold">
+                    {loadingLogs ? '⏳ carregando...' : `${filteredLogs.length} registros${logUserFilter ? ' (histórico completo)' : ''}`}
+                  </span>
                 </div>
                 <div className="glass rounded-2xl border border-white/14 overflow-hidden">
                   <div className="overflow-x-auto scrollbar-space">

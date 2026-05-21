@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Toaster } from 'react-hot-toast'
+import { UpdateAlertModal } from '@/components/ui/UpdateAlertModal'
 
 export const metadata: Metadata = {
   title: 'Orbitask — Mission Control',
@@ -24,6 +25,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="relative z-10">
           {children}
         </div>
+
+        <UpdateAlertModal />
 
         <Toaster
           position="bottom-right"
