@@ -223,7 +223,7 @@ export async function boardRoutes(app: FastifyInstance) {
   // ── POST /boards/:boardId/columns ────────────────────────
   app.post('/boards/:boardId/columns', { preHandler: [authenticate] }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string }
-    const body = request.body as { title: string; ownerId: string; ownerIds?: string[]; color?: string }
+    const body = request.body as { title: string; ownerId: string; ownerIds?: string[]; color?: string; driveDisabled?: boolean }
 
     const board = await prisma.board.findUnique({ where: { id: boardId } })
     if (!board) throw new AppError('Board not found', 404)
@@ -240,6 +240,7 @@ export async function boardRoutes(app: FastifyInstance) {
     })
 
     const allOwnerIds = [...new Set([body.ownerId, ...(body.ownerIds ?? [])])]
+    const driveDisabled = body.driveDisabled === true
 
     const column = await prisma.column.create({
       data: {
@@ -248,6 +249,7 @@ export async function boardRoutes(app: FastifyInstance) {
         ownerId: body.ownerId,
         boardId,
         position: (lastColumn?.position ?? -1) + 1,
+        driveDisabled,
         columnMembers: {
           create: allOwnerIds.map((userId) => ({ userId })),
         },
@@ -260,7 +262,7 @@ export async function boardRoutes(app: FastifyInstance) {
 
     // ── Create Drive subfolder inside board folder (sync) ───
     let columnFolderId: string | null = null
-    if (board.driveFolderId) {
+    if (!driveDisabled && board.driveFolderId) {
       try {
         const folder = await googleDrive.createColumnFolder(body.title, board.driveFolderId)
         if (folder) {
@@ -275,20 +277,22 @@ export async function boardRoutes(app: FastifyInstance) {
       }
     }
 
-    // ── Add initial column members to Drive ─────────────────
-    setImmediate(async () => {
-      const memberEmails: string[] = []
-      for (const uid of allOwnerIds) {
-        const user = await prisma.user.findUnique({ where: { id: uid }, select: { email: true } })
-        if (user?.email) memberEmails.push(user.email)
-      }
-      if (memberEmails.length > 0) {
-        await googleDrive.addMembersToSharedDrive(memberEmails)
-        if (columnFolderId) {
-          await googleDrive.shareFolderWithMany(columnFolderId, memberEmails)
+    // ── Add initial column members to Drive (skip if drive disabled) ──
+    if (!driveDisabled) {
+      setImmediate(async () => {
+        const memberEmails: string[] = []
+        for (const uid of allOwnerIds) {
+          const user = await prisma.user.findUnique({ where: { id: uid }, select: { email: true } })
+          if (user?.email) memberEmails.push(user.email)
         }
-      }
-    })
+        if (memberEmails.length > 0) {
+          await googleDrive.addMembersToSharedDrive(memberEmails)
+          if (columnFolderId) {
+            await googleDrive.shareFolderWithMany(columnFolderId, memberEmails)
+          }
+        }
+      })
+    }
 
     return reply.status(201).send({ column })
   })

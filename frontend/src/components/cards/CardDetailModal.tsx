@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
@@ -34,8 +34,22 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
   const [aborting, setAborting]                 = useState(false)
   const [confirmDeleteSectionId, setConfirmDeleteSectionId] = useState<string | null>(null)
   const [deletingSection, setDeletingSection]   = useState(false)
+  const [reschedulingOpen, setReschedulingOpen] = useState(false)
+  const [rescheduleValue, setRescheduleValue]   = useState('')
+  const [savingReschedule, setSavingReschedule] = useState(false)
 
   const isAdmin = user?.role === 'ADMIN'
+
+  // Display sections newest-first while preserving "previous (chronological) section" reference
+  const orderedSections = useMemo(() => {
+    if (!card?.sections) return [] as { section: any; prevSection: any | null }[]
+    const arr = card.sections as any[]
+    const withPrev = arr.map((section, i) => ({
+      section,
+      prevSection: i > 0 ? arr[i - 1] : null,
+    }))
+    return [...withPrev].reverse()
+  }, [card?.sections])
 
   useEffect(() => {
     api.get(`/cards/${cardId}`)
@@ -152,6 +166,31 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
     }
   }
 
+  function openReschedule() {
+    if (!card) return
+    setRescheduleValue(card.deadline ? card.deadline.substring(0, 16) : '')
+    setReschedulingOpen(true)
+  }
+
+  async function saveReschedule() {
+    if (!rescheduleValue) {
+      toast.error('Escolha uma nova data/horário')
+      return
+    }
+    setSavingReschedule(true)
+    try {
+      await api.patch(`/cards/${cardId}`, { deadline: rescheduleValue })
+      const { data } = await api.get(`/cards/${cardId}`)
+      setCard(data.card)
+      setReschedulingOpen(false)
+      toast.success('Prazo reagendado ✨')
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao reagendar prazo')
+    } finally {
+      setSavingReschedule(false)
+    }
+  }
+
   async function saveReply(mentionId: string, content: Record<string, unknown>) {
     setSavingReply(mentionId)
     try {
@@ -258,9 +297,20 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                       {getPriorityIcon(card.priority)} {getPriorityLabel(card.priority)}
                     </span>
                     {overdue && (
-                      <span className="text-xs px-2.5 py-1 rounded-lg bg-red-500/18 border border-red-500/40 text-red-300 font-body font-bold animate-pulse">
-                        ⚠️ ATRASADO
-                      </span>
+                      <>
+                        <span className="text-xs px-2.5 py-1 rounded-lg bg-red-500/18 border border-red-500/40 text-red-300 font-body font-bold animate-pulse">
+                          ⚠️ ATRASADO
+                        </span>
+                        {isAdmin && !reschedulingOpen && (
+                          <button
+                            onClick={openReschedule}
+                            title="Reagendar prazo"
+                            className="text-xs px-2.5 py-1 rounded-lg bg-amber-500/14 border border-amber-500/40 text-amber-200 hover:text-amber-100 hover:bg-amber-500/22 hover:border-amber-400/60 font-body font-bold transition-all"
+                          >
+                            🗓 Reagendar
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                   <h2 className="font-display text-lg font-bold text-white tracking-wide leading-snug">
@@ -319,6 +369,33 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                   <button onClick={onClose} className="text-white/35 hover:text-white/80 transition-colors text-xl mt-0.5">✕</button>
                 </div>
               </div>
+              )}
+
+              {/* Reschedule composer — visible only when overdue and admin opens it */}
+              {overdue && isAdmin && reschedulingOpen && !editMode && (
+                <div className="mt-3 flex items-center flex-wrap gap-2 px-3 py-2 rounded-xl border border-amber-500/35 bg-amber-500/8">
+                  <span className="text-xs font-display font-black tracking-widest uppercase text-amber-200">🗓 Novo prazo</span>
+                  <input
+                    type="datetime-local"
+                    value={rescheduleValue}
+                    onChange={(e) => setRescheduleValue(e.target.value)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-body input-space"
+                  />
+                  <button
+                    onClick={saveReschedule}
+                    disabled={savingReschedule || !rescheduleValue}
+                    className="px-3 py-1.5 rounded-lg text-xs font-display font-black text-white disabled:opacity-40 transition-all"
+                    style={{ background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }}
+                  >
+                    {savingReschedule ? '⚡ Salvando...' : '✅ Confirmar'}
+                  </button>
+                  <button
+                    onClick={() => setReschedulingOpen(false)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-body border border-white/15 text-white/60 hover:bg-white/5 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               )}
 
               {/* Meta */}
@@ -382,20 +459,37 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                 </div>
               )}
 
-              {card.sections?.map((section: any, index: number) => {
+              {orderedSections.map(({ section, prevSection }) => {
                 const isOwner    = canEditSection(section)
                 const ownerUser  = section.owner
-                const prevSection = index > 0 ? card.sections[index - 1] : null
+                const isCurrent  = section.column.id === card.currentColumn?.id
 
                 return (
-                  <div key={section.id} className="space-y-3">
+                  <div
+                    key={section.id}
+                    className={cn(
+                      'space-y-3 rounded-2xl transition-all',
+                      isCurrent
+                        ? 'ring-1 ring-neon-cyan/35 bg-neon-cyan/5 p-3 shadow-[0_0_24px_-12px_rgba(34,211,238,0.6)]'
+                        : 'opacity-55 saturate-75 hover:opacity-90 transition-opacity',
+                    )}
+                  >
                     {/* Section header */}
                     <div className="flex items-center gap-2">
-                      <div className="h-px flex-1" style={{ background: `linear-gradient(90deg, ${section.column.color}70, transparent)` }} />
+                      <div className="h-px flex-1" style={{ background: `linear-gradient(90deg, ${section.column.color}${isCurrent ? 'cc' : '40'}, transparent)` }} />
                       <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border"
-                        style={{ borderColor: section.column.color + '40', background: section.column.color + '14' }}>
+                        style={{
+                          borderColor: section.column.color + (isCurrent ? '99' : '40'),
+                          background:  section.column.color + (isCurrent ? '2a' : '14'),
+                          boxShadow:   isCurrent ? `0 0 14px -4px ${section.column.color}80` : undefined,
+                        }}>
                         <div className="w-2 h-2 rounded-full shrink-0" style={{ background: section.column.color }} />
                         <span className="text-xs font-display font-bold tracking-wide text-white">{section.column.title}</span>
+                        {isCurrent && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-neon-cyan/20 border border-neon-cyan/45 text-cyan-200 font-display font-black tracking-widest uppercase">
+                            ● Atual
+                          </span>
+                        )}
                         <span className="text-white/40 text-xs">—</span>
                         <Avatar name={ownerUser.name} src={ownerUser.avatarUrl} size="xs" />
                         <span className="text-xs text-white/70 font-body font-semibold">{ownerUser.name}</span>
@@ -563,13 +657,18 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                           className="ml-5 pl-4 border-l-2 border-neon-cyan/25 space-y-3"
                         >
                           {/* Thread header */}
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm">💬</span>
                             <span className="text-xs text-white/55 font-body font-semibold">
                               <strong className="text-neon-cyan/80">{mention.mentionedBy?.name}</strong>
                               {' '}mencionou{' '}
                               <strong className="text-white/85">{mention.mentionedUser?.name}</strong>
                             </span>
+                            {mention.createdAt && (
+                              <span className="text-[10px] text-white/30 font-mono ml-auto">
+                                {new Date(mention.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
                           </div>
 
                           {/* Existing reply (read-only) */}
@@ -582,7 +681,7 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                                 </span>
                                 {mention.repliedAt && (
                                   <span className="text-[10px] text-white/28 font-mono ml-auto">
-                                    {new Date(mention.repliedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                    {new Date(mention.repliedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                 )}
                               </div>

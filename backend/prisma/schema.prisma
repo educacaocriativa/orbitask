@@ -155,6 +155,7 @@ model Column {
 
   driveFolderId  String? @map("drive_folder_id")
   driveFolderUrl String? @map("drive_folder_url") @db.Text
+  driveDisabled  Boolean @default(false) @map("drive_disabled")
 
   ownerId String @map("owner_id")
   owner   User   @relation("ColumnPrimaryOwner", fields: [ownerId], references: [id])
