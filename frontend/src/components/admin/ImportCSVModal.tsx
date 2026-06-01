@@ -132,9 +132,10 @@ export function ImportCSVModal({ open, type, onClose, onSuccess }: ImportCSVModa
               </p>
               {!isUsers && (
                 <div className="text-[11px] text-white/40 font-body space-y-0.5">
-                  <p>• Linha <code className="bg-white/8 px-1 rounded">BOARD</code> → cria a missão</p>
-                  <p>• Linha <code className="bg-white/8 px-1 rounded">COLUMN</code> → cria etapa dentro do último BOARD</p>
-                  <p>• Linha <code className="bg-white/8 px-1 rounded">CARD</code> → cria card dentro da última COLUMN</p>
+                  <p>• Linha <code className="bg-white/8 px-1 rounded">PROJETO</code> → cria a missão/projeto</p>
+                  <p>• Linha <code className="bg-white/8 px-1 rounded">ETAPA</code> → cria etapa dentro do último projeto</p>
+                  <p>• Linha <code className="bg-white/8 px-1 rounded">CARD</code> → cria card dentro da última etapa</p>
+                  <p>• Use <code className="bg-white/8 px-1 rounded">tripulacao</code>, <code className="bg-white/8 px-1 rounded">coordenadores</code> e <code className="bg-white/8 px-1 rounded">responsaveis</code> com e-mails separados por ;</p>
                 </div>
               )}
               <button

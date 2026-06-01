@@ -11,16 +11,100 @@ import { AppError } from '../utils/AppError'
 import { env } from '../config/env'
 
 // ── CSV parser (no external dependency) ──────────────────
+function detectCSVDelimiter(header: string): ',' | ';' {
+  const commaCount = (header.match(/,/g) ?? []).length
+  const semicolonCount = (header.match(/;/g) ?? []).length
+  return semicolonCount > commaCount ? ';' : ','
+}
+
+function parseCSVLine(line: string, delimiter: ',' | ';'): string[] {
+  const values: string[] = []
+  let value = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    const next = line[i + 1]
+
+    if (char === '"' && inQuotes && next === '"') {
+      value += '"'
+      i++
+      continue
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes
+      continue
+    }
+
+    if (char === delimiter && !inQuotes) {
+      values.push(value.trim())
+      value = ''
+      continue
+    }
+
+    value += char
+  }
+
+  values.push(value.trim())
+  return values
+}
+
 function parseCSV(raw: string): Record<string, string>[] {
-  const lines = raw.replace(/\r/g, '').split('\n').filter((l) => l.trim())
+  const lines = raw.replace(/^\uFEFF/, '').replace(/\r/g, '').split('\n').filter((l) => l.trim())
   if (lines.length < 2) return []
 
-  const headers = lines[0].split(',').map((h) => h.trim().toLowerCase())
+  const delimiter = detectCSVDelimiter(lines[0])
+  const headers = parseCSVLine(lines[0], delimiter).map((h) => h.trim().toLowerCase())
   return lines.slice(1).map((line) => {
-    const values = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g) ?? line.split(',')
-    const clean  = values.map((v) => v.trim().replace(/^"|"$/g, ''))
+    const clean = parseCSVLine(line, delimiter)
     return Object.fromEntries(headers.map((h, i) => [h, clean[i] ?? '']))
   }).filter((row) => Object.values(row).some((v) => v))
+}
+
+function getCSVValue(row: Record<string, string>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key]
+    if (value !== undefined && value.trim() !== '') return value.trim()
+  }
+  return ''
+}
+
+function splitCSVList(raw: string): string[] {
+  return raw.split(/[;,]/).map((item) => item.trim()).filter(Boolean)
+}
+
+function normalizePriority(raw: string | undefined): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' {
+  const value = (raw ?? '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  if (['LOW', 'BAIXA'].includes(value)) return 'LOW'
+  if (['HIGH', 'ALTA'].includes(value)) return 'HIGH'
+  if (['CRITICAL', 'CRITICA', 'CRITICO'].includes(value)) return 'CRITICAL'
+  return 'MEDIUM'
+}
+
+function normalizeImportType(raw: string | undefined): 'BOARD' | 'COLUMN' | 'CARD' | '' {
+  const value = (raw ?? '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  if (['BOARD', 'PROJETO', 'MISSAO', 'MISSAO/PROJETO'].includes(value)) return 'BOARD'
+  if (['COLUMN', 'COLUNA', 'ETAPA'].includes(value)) return 'COLUMN'
+  if (['CARD', 'TAREFA', 'ATIVIDADE'].includes(value)) return 'CARD'
+  return ''
+}
+
+function parseDeadline(raw: string | undefined): Date | undefined {
+  const value = (raw ?? '').trim()
+  if (!value) return undefined
+
+  const brDate = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s*(?:as|às)?\s*(\d{1,2}):(\d{2}))?/i)
+  if (brDate) {
+    const [, day, month, year, hour = '0', minute = '0'] = brDate
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute))
+    return Number.isNaN(date.getTime()) ? undefined : date
+  }
+
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? undefined : date
 }
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -284,9 +368,9 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // ── POST /admin/import/missions ──────────────────────────
   // CSV hierarchical format:
-  //   tipo=BOARD  → titulo,descricao,cor,membros(emails separados por ;)
-  //   tipo=COLUMN → titulo,cor,responsaveis(emails separados por ;)
-  //   tipo=CARD   → titulo,descricao,prioridade,prazo(YYYY-MM-DD),tags(;)
+  //   tipo=PROJETO/BOARD → nome,descricao,cor,tripulacao,coordenadores
+  //   tipo=ETAPA/COLUMN  → nome,cor,responsaveis
+  //   tipo=CARD          → nome,descricao,prioridade,prazo,tags
   app.post('/admin/import/missions', {
     preHandler: [isAdmin],
   }, async (request, reply) => {
@@ -309,38 +393,44 @@ export async function adminRoutes(app: FastifyInstance) {
 
     for (let i = 0; i < rows.length; i++) {
       const row  = rows[i]
-      const tipo = (row['tipo'] ?? row['type'] ?? '').toUpperCase().trim()
+      const tipo = normalizeImportType(row['tipo'] ?? row['type'])
 
       try {
         if (tipo === 'BOARD') {
-          const memberEmails = (row['membros'] ?? row['members'] ?? '')
-            .split(';').map((e: string) => e.trim()).filter(Boolean)
+          const memberEmails = splitCSVList(getCSVValue(row, 'tripulacao', 'membros', 'members'))
+          const coordinatorEmails = splitCSVList(getCSVValue(row, 'coordenadores', 'coordinators', 'coordinator'))
+          const boardEmails = [...new Set([...memberEmails, ...coordinatorEmails])]
 
           const members = await prisma.user.findMany({
-            where: { email: { in: memberEmails } },
-            select: { id: true },
+            where: { email: { in: boardEmails } },
+            select: { id: true, email: true },
           })
+          const coordinatorSet = new Set(coordinatorEmails.map((email) => email.toLowerCase()))
 
           const board = await prisma.board.create({
             data: {
-              title:       row['titulo'] ?? row['title'] ?? 'Missão importada',
-              description: row['descricao'] ?? row['description'] ?? undefined,
-              color:       row['cor'] ?? row['color'] ?? '#6366f1',
+              title:       getCSVValue(row, 'nome', 'titulo', 'title') || 'Missão importada',
+              description: getCSVValue(row, 'descricao', 'description') || undefined,
+              color:       getCSVValue(row, 'cor', 'color') || '#6366f1',
               ownerId:     request.user.id,
-              members: { create: members.map((m) => ({ userId: m.id })) },
+              members: {
+                create: members.map((m) => ({
+                  userId: m.id,
+                  role: coordinatorSet.has(m.email.toLowerCase()) ? 'COORDINATOR' : 'MEMBER',
+                })),
+              },
             },
           })
           currentBoard   = { id: board.id, title: board.title }
           currentColumn  = null
           columnPosition = 0
           cardPosition   = 0
-          results.push({ row: i + 2, tipo: 'BOARD', titulo: board.title, status: 'criado' })
+          results.push({ row: i + 2, tipo: 'PROJETO', titulo: board.title, status: 'criado' })
 
         } else if (tipo === 'COLUMN') {
-          if (!currentBoard) throw new Error('COLUMN sem BOARD anterior')
+          if (!currentBoard) throw new Error('ETAPA sem PROJETO anterior')
 
-          const ownerEmails = (row['responsaveis'] ?? row['owners'] ?? '')
-            .split(';').map((e: string) => e.trim()).filter(Boolean)
+          const ownerEmails = splitCSVList(getCSVValue(row, 'responsaveis', 'owners'))
 
           const owners = await prisma.user.findMany({
             where: { email: { in: ownerEmails } },
@@ -350,8 +440,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
           const column = await prisma.column.create({
             data: {
-              title:    row['titulo'] ?? row['title'] ?? 'Etapa',
-              color:    row['cor']    ?? row['color'] ?? '#818cf8',
+              title:    getCSVValue(row, 'nome', 'titulo', 'title') || 'Etapa',
+              color:    getCSVValue(row, 'cor', 'color') || '#818cf8',
               ownerId:  primaryOwnerId,
               boardId:  currentBoard.id,
               position: columnPosition++,
@@ -360,24 +450,20 @@ export async function adminRoutes(app: FastifyInstance) {
           })
           currentColumn = { id: column.id, title: column.title, ownerId: primaryOwnerId }
           cardPosition  = 0
-          results.push({ row: i + 2, tipo: 'COLUMN', titulo: column.title, status: 'criado' })
+          results.push({ row: i + 2, tipo: 'ETAPA', titulo: column.title, status: 'criado' })
 
         } else if (tipo === 'CARD') {
-          if (!currentBoard || !currentColumn) throw new Error('CARD sem BOARD/COLUMN anterior')
+          if (!currentBoard || !currentColumn) throw new Error('CARD sem PROJETO/ETAPA anterior')
 
-          const priority = (['LOW','MEDIUM','HIGH','CRITICAL'].includes(
-            (row['prioridade'] ?? row['priority'] ?? '').toUpperCase())
-            ? (row['prioridade'] ?? row['priority']).toUpperCase()
-            : 'MEDIUM')
+          const priority = normalizePriority(row['prioridade'] ?? row['priority'])
 
-          const tags = (row['tags'] ?? '').split(';').map((t: string) => t.trim()).filter(Boolean)
-          const deadlineRaw = row['prazo'] ?? row['deadline'] ?? ''
-          const deadline = deadlineRaw ? new Date(deadlineRaw) : undefined
+          const tags = splitCSVList(row['tags'] ?? '')
+          const deadline = parseDeadline(row['prazo'] ?? row['deadline'])
 
           const card = await prisma.card.create({
             data: {
-              title:           row['titulo'] ?? row['title'] ?? 'Card importado',
-              description:     row['descricao'] ?? row['description'] ?? undefined,
+              title:           getCSVValue(row, 'nome', 'titulo', 'title') || 'Card importado',
+              description:     getCSVValue(row, 'descricao', 'description') || undefined,
               priority,
               tags,
               deadline,
@@ -402,10 +488,10 @@ export async function adminRoutes(app: FastifyInstance) {
           results.push({ row: i + 2, tipo: 'CARD', titulo: card.title, status: 'criado' })
 
         } else {
-          results.push({ row: i + 2, tipo: tipo || '?', titulo: '', status: 'ignorado', error: 'tipo desconhecido' })
+          results.push({ row: i + 2, tipo: row['tipo'] || '?', titulo: '', status: 'ignorado', error: 'tipo desconhecido' })
         }
       } catch (err: any) {
-        results.push({ row: i + 2, tipo, titulo: row['titulo'] ?? '', status: 'erro', error: err?.message ?? 'erro desconhecido' })
+        results.push({ row: i + 2, tipo: row['tipo'] || tipo, titulo: getCSVValue(row, 'nome', 'titulo'), status: 'erro', error: err?.message ?? 'erro desconhecido' })
       }
     }
 
@@ -428,13 +514,13 @@ export async function adminRoutes(app: FastifyInstance) {
   // ── GET /admin/import/template/missions ──────────────────
   app.get('/admin/import/template/missions', { preHandler: [isAdmin] }, async (_request, reply) => {
     const csv = [
-      'tipo,titulo,descricao,cor,membros,responsaveis,prioridade,prazo,tags',
-      'BOARD,Projeto Apollo,Missão de exploração lunar,#6366f1,joao@empresa.com;maria@empresa.com,,,,',
-      'COLUMN,Planejamento,,,, joao@empresa.com,,,',
-      'CARD,Definir escopo,Documento de escopo inicial,,,,MEDIUM,2026-04-30,planejamento;escopo',
-      'CARD,Reunião de kickoff,,,,,HIGH,2026-04-15,reunião',
-      'COLUMN,Execução,,,,maria@empresa.com,,,',
-      'CARD,Desenvolver módulo A,,,,,HIGH,2026-05-15,desenvolvimento',
+      'tipo;nome;descricao;cor;tripulacao;coordenadores;responsaveis;prioridade;prazo;tags',
+      'PROJETO;Ensino Médio Cristão;Organização do 1º bimestre;#7c3aed;"admin@orbitask.com;mariano.index@gmail.com";admin@orbitask.com;;;;',
+      'ETAPA;1ª Série - Arte;Linguagens e suas tecnologias;#7c3aed;;;admin@orbitask.com;;;',
+      'CARD;1ª Série - Arte - Cap1;;;;;;Média;03/06/2026 às 12:00;arte',
+      'CARD;1ª Série - Arte - Cap2;;;;;;Média;03/06/2026 às 12:01;arte',
+      'ETAPA;1ª Série - Biologia;Ciências da Natureza;#10b981;;;mariano.index@gmail.com;;;',
+      'CARD;1ª Série - Bio - Cap1;;;;;;Alta;05/06/2026 às 12:00;biologia',
     ].join('\n') + '\n'
     reply.header('Content-Type', 'text/csv')
     reply.header('Content-Disposition', 'attachment; filename="template_missoes.csv"')
