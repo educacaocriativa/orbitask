@@ -332,15 +332,23 @@ export async function cardRoutes(app: FastifyInstance) {
       data: { position: { increment: 1 } },
     })
 
-    // Create Drive folder named after COLUMN OWNER (not the mover)
-    let newDriveFolderUrl: string | null = null
-    let newDriveFolderId: string | null = null
-    if (targetColumn.driveFolderId) {
+    const existingTargetSection = await prisma.cardSection.findUnique({
+      where: { cardId_columnId: { cardId: id, columnId: targetColumnId } },
+      select: { driveFolderId: true, driveFolderUrl: true },
+    })
+
+    // Reuse the target section folder when the card returns to a previous column.
+    let targetDriveFolderId: string | null = existingTargetSection?.driveFolderId ?? null
+    let targetDriveFolderUrl: string | null = existingTargetSection?.driveFolderUrl ?? null
+    const targetColumnDriveFolderId = targetColumn.driveFolderId
+    const shouldCreateTargetFolder = !targetDriveFolderId && !!targetColumnDriveFolderId
+
+    if (shouldCreateTargetFolder && targetColumnDriveFolderId) {
       try {
-        const folder = await googleDrive.createCardFolder(card.title, targetColumn.owner.name, targetColumn.driveFolderId)
+        const folder = await googleDrive.createCardFolder(card.title, targetColumn.owner.name, targetColumnDriveFolderId)
         if (folder) {
-          newDriveFolderUrl = folder.url
-          newDriveFolderId = folder.id
+          targetDriveFolderUrl = folder.url
+          targetDriveFolderId = folder.id
         }
       } catch (err) {
         console.error('Drive card folder error:', err)
@@ -359,7 +367,8 @@ export async function cardRoutes(app: FastifyInstance) {
         lastMovedByUserId: userId,
         columnEnteredAt: new Date(),
         previousDriveFolderUrl,
-        ...(newDriveFolderId ? { driveFolderId: newDriveFolderId, driveFolderUrl: newDriveFolderUrl } : {}),
+        driveFolderId: targetDriveFolderId,
+        driveFolderUrl: targetDriveFolderUrl,
       },
     })
 
@@ -367,16 +376,16 @@ export async function cardRoutes(app: FastifyInstance) {
     await prisma.cardSection.upsert({
       where: { cardId_columnId: { cardId: id, columnId: targetColumnId } },
       update: {
-        // Update Drive folder if just created
-        ...(newDriveFolderId ? { driveFolderId: newDriveFolderId, driveFolderUrl: newDriveFolderUrl } : {}),
+        driveFolderId: targetDriveFolderId,
+        driveFolderUrl: targetDriveFolderUrl,
       },
       create: {
         cardId: id,
         columnId: targetColumnId,
         ownerId: targetColumn.owner.id,
         content: null,
-        driveFolderId: newDriveFolderId,
-        driveFolderUrl: newDriveFolderUrl,
+        driveFolderId: targetDriveFolderId,
+        driveFolderUrl: targetDriveFolderUrl,
       },
     })
 
@@ -420,7 +429,7 @@ export async function cardRoutes(app: FastifyInstance) {
     return reply.send({
       card: updatedCard,
       message: `Card moved to "${targetColumn.title}"`,
-      driveFolderUrl: newDriveFolderUrl,
+      driveFolderUrl: targetDriveFolderUrl,
       previousDriveFolderUrl,
     })
   })

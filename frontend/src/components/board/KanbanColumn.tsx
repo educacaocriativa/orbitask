@@ -197,8 +197,10 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
               className={cn(
                 'flex flex-col gap-2.5 flex-1 p-2 rounded-b-2xl glass transition-all duration-200 overflow-y-auto scrollbar-space',
                 isOver && 'drop-zone-active',
+                // Empty columns get a tall, generous drop zone so dragging cards into them is easy
+                column.cards.length === 0 && 'min-h-[320px]',
               )}
-              style={{ minHeight: 80 }}
+              style={{ minHeight: column.cards.length === 0 ? undefined : 80 }}
             >
               <AnimatePresence mode="popLayout">
                 {column.cards.map((card, index) => {
@@ -220,8 +222,11 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
               </AnimatePresence>
 
               {column.cards.length === 0 && !isOver && !dropPreviewBeforeCardId && (
-                <div className="flex-1 flex items-center justify-center py-4">
-                  <p className="text-[11px] text-white/25 font-body text-center leading-relaxed font-semibold">
+                <div
+                  className="flex-1 flex items-center justify-center py-4 rounded-xl border-2 border-dashed border-white/10 m-1 pointer-events-none"
+                  style={{ minHeight: 240 }}
+                >
+                  <p className="text-[11px] text-white/30 font-body text-center leading-relaxed font-semibold">
                     🌌 Zona vazia<br />Arraste cards aqui
                   </p>
                 </div>
