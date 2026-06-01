@@ -74,6 +74,11 @@ function splitCSVList(raw: string): string[] {
   return raw.split(/[;,]/).map((item) => item.trim()).filter(Boolean)
 }
 
+function getMissingEmails(expected: string[], found: string[]): string[] {
+  const foundSet = new Set(found.map((email) => email.toLowerCase()))
+  return expected.filter((email) => !foundSet.has(email.toLowerCase()))
+}
+
 function normalizePriority(raw: string | undefined): 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' {
   const value = (raw ?? '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
@@ -386,8 +391,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const results: { row: number; tipo: string; titulo: string; status: string; error?: string }[] = []
 
-    let currentBoard: { id: string; title: string } | null = null
-    let currentColumn: { id: string; title: string; ownerId: string } | null = null
+    let currentBoard: { id: string; title: string; driveFolderId: string | null } | null = null
+    let currentColumn: { id: string; title: string; ownerId: string; ownerName: string; driveFolderId: string | null } | null = null
     let cardPosition = 0
     let columnPosition = 0
 
@@ -405,6 +410,10 @@ export async function adminRoutes(app: FastifyInstance) {
             where: { email: { in: boardEmails } },
             select: { id: true, email: true },
           })
+          const missingMembers = getMissingEmails(boardEmails, members.map((m) => m.email))
+          if (missingMembers.length > 0) {
+            throw new Error(`usuário(s) não encontrado(s): ${missingMembers.join(', ')}`)
+          }
           const coordinatorSet = new Set(coordinatorEmails.map((email) => email.toLowerCase()))
 
           const board = await prisma.board.create({
@@ -421,7 +430,24 @@ export async function adminRoutes(app: FastifyInstance) {
               },
             },
           })
-          currentBoard   = { id: board.id, title: board.title }
+
+          let boardDriveFolderId: string | null = null
+          try {
+            const folder = await googleDrive.createBoardFolder(board.title)
+            if (folder) {
+              boardDriveFolderId = folder.id
+              await prisma.board.update({
+                where: { id: board.id },
+                data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
+              })
+              const emails = members.map((m) => m.email).filter(Boolean)
+              setImmediate(() => googleDrive.addMembersToSharedDrive(emails))
+            }
+          } catch (err) {
+            console.error('Drive board folder import error:', err)
+          }
+
+          currentBoard   = { id: board.id, title: board.title, driveFolderId: boardDriveFolderId }
           currentColumn  = null
           columnPosition = 0
           cardPosition   = 0
@@ -434,21 +460,56 @@ export async function adminRoutes(app: FastifyInstance) {
 
           const owners = await prisma.user.findMany({
             where: { email: { in: ownerEmails } },
-            select: { id: true },
+            select: { id: true, email: true, name: true },
           })
-          const primaryOwnerId = owners[0]?.id ?? request.user.id
+          const missingOwners = getMissingEmails(ownerEmails, owners.map((o) => o.email))
+          if (missingOwners.length > 0) {
+            throw new Error(`responsável(is) não encontrado(s): ${missingOwners.join(', ')}`)
+          }
+          const fallbackOwner = owners.length === 0
+            ? await prisma.user.findUnique({ where: { id: request.user.id }, select: { id: true, email: true, name: true } })
+            : null
+          const columnOwners = owners.length > 0 ? owners : (fallbackOwner ? [fallbackOwner] : [])
+          const primaryOwner = columnOwners[0]
+          if (!primaryOwner) throw new Error('responsável da etapa não encontrado')
+          const allOwnerIds = [...new Set(columnOwners.map((o) => o.id))]
 
           const column = await prisma.column.create({
             data: {
               title:    getCSVValue(row, 'nome', 'titulo', 'title') || 'Etapa',
               color:    getCSVValue(row, 'cor', 'color') || '#818cf8',
-              ownerId:  primaryOwnerId,
+              ownerId:  primaryOwner.id,
               boardId:  currentBoard.id,
               position: columnPosition++,
-              columnMembers: { create: owners.map((o) => ({ userId: o.id })) },
+              columnMembers: { create: allOwnerIds.map((userId) => ({ userId })) },
             },
           })
-          currentColumn = { id: column.id, title: column.title, ownerId: primaryOwnerId }
+
+          let columnDriveFolderId: string | null = null
+          if (currentBoard.driveFolderId) {
+            try {
+              const folder = await googleDrive.createColumnFolder(column.title, currentBoard.driveFolderId)
+              if (folder) {
+                columnDriveFolderId = folder.id
+                await prisma.column.update({
+                  where: { id: column.id },
+                  data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
+                })
+              }
+            } catch (err) {
+              console.error('Drive column folder import error:', err)
+            }
+          }
+
+          setImmediate(async () => {
+            const emails = columnOwners.map((o) => o.email).filter(Boolean)
+            if (emails.length > 0) {
+              await googleDrive.addMembersToSharedDrive(emails)
+              if (columnDriveFolderId) await googleDrive.shareFolderWithMany(columnDriveFolderId, emails)
+            }
+          })
+
+          currentColumn = { id: column.id, title: column.title, ownerId: primaryOwner.id, ownerName: primaryOwner.name, driveFolderId: columnDriveFolderId }
           cardPosition  = 0
           results.push({ row: i + 2, tipo: 'ETAPA', titulo: column.title, status: 'criado' })
 
@@ -470,18 +531,54 @@ export async function adminRoutes(app: FastifyInstance) {
               deadlineAt:      deadline ? new Date() : undefined,
               position:        cardPosition++,
               currentColumnId: currentColumn.id,
+              columnEnteredAt:  new Date(),
               boardId:         currentBoard.id,
               creatorId:       request.user.id,
             },
           })
 
+          let sectionDriveFolderId: string | null = null
+          let sectionDriveFolderUrl: string | null = null
+          let resourcesFolderId: string | null = null
+          let resourcesFolderUrl: string | null = null
+
+          if (currentColumn.driveFolderId) {
+            try {
+              const folder = await googleDrive.createCardFolder(card.title, currentColumn.ownerName, currentColumn.driveFolderId)
+              if (folder) {
+                sectionDriveFolderId = folder.id
+                sectionDriveFolderUrl = folder.url
+
+                const recursos = await googleDrive.createResourcesFolder(folder.id)
+                if (recursos) {
+                  resourcesFolderId = recursos.id
+                  resourcesFolderUrl = recursos.url
+                }
+
+                await prisma.card.update({
+                  where: { id: card.id },
+                  data: {
+                    driveFolderId: folder.id,
+                    driveFolderUrl: folder.url,
+                    resourcesFolderId,
+                    resourcesFolderUrl,
+                  },
+                })
+              }
+            } catch (err) {
+              console.error('Drive card folder import error:', err)
+            }
+          }
+
           // Auto-create section for the column owner
           await prisma.cardSection.create({
             data: {
-              cardId:   card.id,
-              columnId: currentColumn.id,
-              ownerId:  currentColumn.ownerId,
-              content:  undefined,
+              cardId:         card.id,
+              columnId:       currentColumn.id,
+              ownerId:        currentColumn.ownerId,
+              content:        undefined,
+              driveFolderId:  sectionDriveFolderId,
+              driveFolderUrl: sectionDriveFolderUrl,
             },
           })
 
@@ -507,6 +604,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/admin/import/template/users', { preHandler: [isAdmin] }, async (_request, reply) => {
     const csv = 'nome,email,senha,perfil,telefone\nJoão Silva,joao@empresa.com,Senha@123,MEMBER,+5511999999999\nMaria Admin,maria@empresa.com,Senha@456,ADMIN,\n'
     reply.header('Content-Type', 'text/csv')
+    reply.header('Cache-Control', 'no-store')
     reply.header('Content-Disposition', 'attachment; filename="template_usuarios.csv"')
     return reply.send(csv)
   })
@@ -523,6 +621,7 @@ export async function adminRoutes(app: FastifyInstance) {
       'CARD;1ª Série - Bio - Cap1;;;;;;Alta;05/06/2026 às 12:00;biologia',
     ].join('\n') + '\n'
     reply.header('Content-Type', 'text/csv')
+    reply.header('Cache-Control', 'no-store')
     reply.header('Content-Disposition', 'attachment; filename="template_missoes.csv"')
     return reply.send(csv)
   })

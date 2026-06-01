@@ -46,7 +46,7 @@ export function ImportCSVModal({ open, type, onClose, onSuccess }: ImportCSVModa
 
   async function downloadTemplate() {
     try {
-      const { data } = await api.get(templateUrl, { responseType: 'blob' })
+      const { data } = await api.get(`${templateUrl}?t=${Date.now()}`, { responseType: 'blob' })
       const url  = URL.createObjectURL(new Blob([data]))
       const link = document.createElement('a')
       link.href  = url
