@@ -260,6 +260,9 @@ model CardSection {
   ownerId String @map("owner_id")
   owner   User   @relation("SectionOwner", fields: [ownerId], references: [id])
 
+  arrivedAt DateTime? @map("arrived_at")
+  leftAt    DateTime? @map("left_at")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

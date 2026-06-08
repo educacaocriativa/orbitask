@@ -2,8 +2,9 @@
 import { useState, useCallback } from 'react'
 import {
   DndContext, DragOverlay, MouseSensor, TouchSensor,
-  useSensor, useSensors, closestCorners,
+  useSensor, useSensors, pointerWithin, closestCenter, rectIntersection,
   type DragStartEvent, type DragEndEvent, type DragOverEvent,
+  type CollisionDetection,
 } from '@dnd-kit/core'
 import { arrayMove, SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -37,9 +38,18 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
   } | null>(null)
 
   const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
   )
+
+  // Composite collision: prefer pointer-within (precise) → fall back to closestCenter
+  const collisionDetection: CollisionDetection = useCallback((args) => {
+    const pointerCollisions = pointerWithin(args)
+    if (pointerCollisions.length > 0) return pointerCollisions
+    const rectCollisions = rectIntersection(args)
+    if (rectCollisions.length > 0) return rectCollisions
+    return closestCenter(args)
+  }, [])
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const type = event.active.data.current?.type
@@ -65,11 +75,29 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
       return
     }
 
-    // Over a specific card — find which column it belongs to
+    // Over a specific card — determine before/after by comparing center Y positions
     const colWithCard = board.columns.find((c) => c.cards.some((card) => card.id === overId))
     if (colWithCard) {
       setDragOverColumnId(colWithCard.id)
-      setDragOverCardId(overId)
+
+      const activeRect = event.active.rect.current?.translated
+      const overRect   = event.over?.rect
+      if (activeRect && overRect) {
+        const activeMidY = activeRect.top + activeRect.height / 2
+        const overMidY   = overRect.top   + overRect.height  / 2
+        if (activeMidY > overMidY) {
+          // Dragged card center is below target card center → insert AFTER it
+          const cardIndex = colWithCard.cards.findIndex((c) => c.id === overId)
+          const nextCard  = colWithCard.cards[cardIndex + 1]
+          // null = drop at end; next card ID = insert before that card
+          setDragOverCardId(nextCard?.id ?? null)
+          if (!nextCard) setDragOverColumnId(colWithCard.id)
+        } else {
+          setDragOverCardId(overId)
+        }
+      } else {
+        setDragOverCardId(overId)
+      }
     }
   }, [board])
 
@@ -182,7 +210,7 @@ export function KanbanBoard({ boardId, filteredBoard, onCardMoved, onArchive, on
     <>
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCorners}
+        collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}

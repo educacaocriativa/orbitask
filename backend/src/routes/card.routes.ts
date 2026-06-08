@@ -322,6 +322,13 @@ export async function cardRoutes(app: FastifyInstance) {
     const previousDriveFolderUrl = card.driveFolderUrl ?? null
 
     const fromColumnTitle = card.currentColumn.title
+    const now = new Date()
+
+    // Register the departure time on the source column section
+    await prisma.cardSection.updateMany({
+      where: { cardId: id, columnId: card.currentColumnId },
+      data: { leftAt: now },
+    })
 
     // Shift other cards in target column
     await prisma.card.updateMany({
@@ -373,11 +380,14 @@ export async function cardRoutes(app: FastifyInstance) {
     })
 
     // Auto-create section for the new column's owner (if not already exists)
+    // arrivedAt is always set on arrival; leftAt is cleared so this visit is "open"
     await prisma.cardSection.upsert({
       where: { cardId_columnId: { cardId: id, columnId: targetColumnId } },
       update: {
         driveFolderId: targetDriveFolderId,
         driveFolderUrl: targetDriveFolderUrl,
+        arrivedAt: now,
+        leftAt: null,
       },
       create: {
         cardId: id,
@@ -386,6 +396,7 @@ export async function cardRoutes(app: FastifyInstance) {
         content: null,
         driveFolderId: targetDriveFolderId,
         driveFolderUrl: targetDriveFolderUrl,
+        arrivedAt: now,
       },
     })
 

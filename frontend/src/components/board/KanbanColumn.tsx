@@ -200,7 +200,7 @@ export function KanbanColumn({ column, boardId, onArchive, dropPreviewBeforeCard
                 // Empty columns get a tall, generous drop zone so dragging cards into them is easy
                 column.cards.length === 0 && 'min-h-[320px]',
               )}
-              style={{ minHeight: column.cards.length === 0 ? undefined : 80 }}
+              style={{ minHeight: column.cards.length === 0 ? undefined : 120 }}
             >
               <AnimatePresence mode="popLayout">
                 {column.cards.map((card, index) => {

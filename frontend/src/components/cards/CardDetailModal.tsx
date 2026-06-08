@@ -537,6 +537,35 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                       )}
                     </div>
 
+                    {/* Timestamps: chegada e saída da etapa */}
+                    {(section.arrivedAt || section.leftAt) && (
+                      <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-white/3 border border-white/8">
+                        {section.arrivedAt && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-green-400/70">⬇ Chegou</span>
+                            <span className="text-[10px] font-mono text-white/60">
+                              {new Date(section.arrivedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        )}
+                        {section.arrivedAt && section.leftAt && (
+                          <span className="text-white/15 text-xs">|</span>
+                        )}
+                        {section.leftAt ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-red-400/70">⬆ Saiu</span>
+                            <span className="text-[10px] font-mono text-white/60">
+                              {new Date(section.leftAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        ) : section.arrivedAt ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-neon-cyan/60 animate-pulse">● ainda aqui</span>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
                     {/* Drive: buscar arquivo da etapa anterior */}
                     {prevSection?.driveFolderUrl && (
                       <DriveLink
