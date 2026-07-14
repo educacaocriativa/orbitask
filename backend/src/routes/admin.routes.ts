@@ -8,6 +8,7 @@ import { googleDrive } from '../services/GoogleDriveService'
 import { syncDriveAccess } from '../jobs/driveSync'
 import { prisma } from '../database/prisma'
 import { AppError } from '../utils/AppError'
+import { columnFolderName, syncColumnFolderNames } from '../utils/columnFolderSync'
 import { env } from '../config/env'
 
 // ── CSV parser (no external dependency) ──────────────────
@@ -213,6 +214,22 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!googleDrive.isConfigured) throw new AppError('Google Drive não configurado', 503)
     const result = await syncDriveAccess()
     return reply.send(result)
+  })
+
+  // ── POST /admin/drive/sync-folder-names — renomeia pastas das etapas ─
+  // Aplica o prefixo numérico de posição (01 - Etapa) em todos os boards ativos
+  app.post('/admin/drive/sync-folder-names', {
+    preHandler: [isAdmin],
+  }, async (_request, reply) => {
+    if (!googleDrive.isConfigured) throw new AppError('Google Drive não configurado', 503)
+    const boards = await prisma.board.findMany({
+      where: { isArchived: false, driveFolderId: { not: null } },
+      select: { id: true, title: true },
+    })
+    for (const board of boards) {
+      await syncColumnFolderNames(board.id)
+    }
+    return reply.send({ ok: true, boardsSynced: boards.length })
   })
 
   // ── PATCH /admin/users/:id/crm-access ───────────────────
@@ -488,7 +505,7 @@ export async function adminRoutes(app: FastifyInstance) {
           let columnDriveFolderId: string | null = null
           if (currentBoard.driveFolderId) {
             try {
-              const folder = await googleDrive.createColumnFolder(column.title, currentBoard.driveFolderId)
+              const folder = await googleDrive.createColumnFolder(columnFolderName(column.position + 1, column.title), currentBoard.driveFolderId)
               if (folder) {
                 columnDriveFolderId = folder.id
                 await prisma.column.update({

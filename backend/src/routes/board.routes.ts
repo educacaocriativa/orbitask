@@ -4,6 +4,7 @@ import { authenticate } from '../middlewares/auth'
 import { AppError } from '../utils/AppError'
 import { WhatsAppService } from '../services/WhatsAppService'
 import { googleDrive } from '../services/GoogleDriveService'
+import { columnFolderName, syncColumnFolderNames } from '../utils/columnFolderSync'
 
 const whatsapp = new WhatsAppService()
 
@@ -264,7 +265,8 @@ export async function boardRoutes(app: FastifyInstance) {
     let columnFolderId: string | null = null
     if (!driveDisabled && board.driveFolderId) {
       try {
-        const folder = await googleDrive.createColumnFolder(body.title, board.driveFolderId)
+        const activeCount = await prisma.column.count({ where: { boardId, isArchived: false } })
+        const folder = await googleDrive.createColumnFolder(columnFolderName(activeCount, body.title), board.driveFolderId)
         if (folder) {
           columnFolderId = folder.id
           await prisma.column.update({
@@ -414,8 +416,9 @@ export async function boardRoutes(app: FastifyInstance) {
     }
 
     // ── Rename Drive folder if column title changed ──────────
+    // Usa o sync do board inteiro para manter o prefixo numérico de posição
     if (body.title && prevColumn?.title !== body.title && prevColumn?.driveFolderId) {
-      setImmediate(() => googleDrive.renameFolder(prevColumn.driveFolderId!, body.title!))
+      setImmediate(() => syncColumnFolderNames(prevColumn.boardId).catch((err) => console.error('Drive column folder sync error:', err)))
     }
 
     return reply.send({ column })
@@ -448,6 +451,8 @@ export async function boardRoutes(app: FastifyInstance) {
     await prisma.columnMember.deleteMany({ where: { columnId: id } })
     await prisma.column.delete({ where: { id } })
 
+    setImmediate(() => syncColumnFolderNames(column.boardId).catch((err) => console.error('Drive column folder sync error:', err)))
+
     return reply.send({ ok: true })
   })
 
@@ -472,6 +477,9 @@ export async function boardRoutes(app: FastifyInstance) {
     }
 
     await prisma.column.update({ where: { id }, data: { isArchived: true } })
+
+    setImmediate(() => syncColumnFolderNames(column.boardId).catch((err) => console.error('Drive column folder sync error:', err)))
+
     return reply.send({ ok: true })
   })
 
@@ -489,6 +497,9 @@ export async function boardRoutes(app: FastifyInstance) {
     if (!isAdmin && !isCoord) throw new AppError('Sem permissão para restaurar etapas', 403)
 
     await prisma.column.update({ where: { id }, data: { isArchived: false } })
+
+    setImmediate(() => syncColumnFolderNames(column.boardId).catch((err) => console.error('Drive column folder sync error:', err)))
+
     return reply.send({ ok: true })
   })
 
@@ -513,6 +524,7 @@ export async function boardRoutes(app: FastifyInstance) {
 
   // ── PATCH /boards/:boardId/columns/reorder ───────────────
   app.patch('/boards/:boardId/columns/reorder', { preHandler: [authenticate] }, async (request, reply) => {
+    const { boardId } = request.params as { boardId: string }
     const { columnIds } = request.body as { columnIds: string[] }
 
     await prisma.$transaction(
@@ -520,6 +532,9 @@ export async function boardRoutes(app: FastifyInstance) {
         prisma.column.update({ where: { id: colId }, data: { position: index } })
       )
     )
+
+    // Renomeia as pastas no Drive para a nova ordem (prefixo numérico)
+    setImmediate(() => syncColumnFolderNames(boardId).catch((err) => console.error('Drive column folder sync error:', err)))
 
     return reply.send({ message: 'Columns reordered' })
   })
