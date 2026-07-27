@@ -56,6 +56,16 @@ enum BoardMemberRole {
   MEMBER
 }
 
+enum ActivityType {
+  CARD_MOVED
+  CARD_CREATED
+  CARD_ARCHIVED
+  CARD_RESTORED
+  FILE_UPLOADED
+  FILE_DELETED
+  FOLDER_CREATED
+}
+
 // ─────────────────────────────────────────────
 //  USERS
 // ─────────────────────────────────────────────
@@ -577,4 +587,52 @@ model AccessLog {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("access_logs")
+}
+
+// ─────────────────────────────────────────────
+//  ACTIVITY EVENTS (relatório de atividade)
+// ─────────────────────────────────────────────
+//
+// Trilha de auditoria consultável por projeto + período.
+//
+// Propositalmente SEM foreign keys: a linha precisa sobreviver a tudo que
+// acontecer depois com o que ela descreve. `DELETE /columns/:id` apaga etapa
+// de verdade, e uma FK deixaria o histórico órfão ou bloquearia a exclusão.
+//
+// Pelo mesmo motivo os nomes são copiados para dentro da linha: renomear uma
+// etapa em agosto não pode mudar o que o relatório de junho diz.
+model ActivityEvent {
+  id   String       @id @default(uuid())
+  type ActivityType
+
+  actorId    String? @map("actor_id") // null em linha de backfill sem autor identificável
+  actorName  String  @map("actor_name")
+  actorEmail String  @map("actor_email")
+
+  boardId    String @map("board_id")
+  boardTitle String @map("board_title")
+
+  cardId    String? @map("card_id")
+  cardTitle String? @map("card_title")
+
+  columnId    String? @map("column_id") // etapa de origem em CARD_MOVED
+  columnTitle String? @map("column_title")
+
+  toColumnId    String? @map("to_column_id") // só em CARD_MOVED
+  toColumnTitle String? @map("to_column_title")
+
+  folderName String? @map("folder_name")
+  folderUrl  String? @map("folder_url") @db.Text
+
+  detail Json? // fileName, fileSizeBytes, mimeType, folderKind...
+
+  isBackfilled Boolean @default(false) @map("is_backfilled")
+
+  occurredAt DateTime @map("occurred_at") // quando aconteceu (backfill: no passado)
+  createdAt  DateTime @default(now()) @map("created_at") // quando a linha foi gravada
+
+  @@index([boardId, occurredAt])
+  @@index([actorId, occurredAt])
+  @@index([occurredAt])
+  @@map("activity_events")
 }

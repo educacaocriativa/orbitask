@@ -5,6 +5,13 @@ import { AppError } from '../utils/AppError'
 import { enqueueNotification } from '../jobs/notificationQueue'
 import { NotificationType } from '@prisma/client'
 import { googleDrive } from '../services/GoogleDriveService'
+import { recordActivity } from '../services/ActivityService'
+
+/** Rótulo de pasta usado no relatório: "Etapa / Missão". Legível e estável mesmo
+ *  quando não sabemos o nome literal da pasta no Drive. */
+function folderLabel(columnTitle: string, cardTitle: string) {
+  return `${columnTitle} / ${cardTitle}`
+}
 
 export async function cardRoutes(app: FastifyInstance) {
   // ── POST /boards/:boardId/cards ──────────────────────────
@@ -117,6 +124,19 @@ export async function cardRoutes(app: FastifyInstance) {
           columnTitle: column.title,
         })),
       },
+    })
+
+    await recordActivity({
+      type:        'CARD_CREATED',
+      actor:       request.user,
+      boardId,
+      boardTitle:  column.board.title,
+      cardId:      card.id,
+      cardTitle:   card.title,
+      columnId:    column.id,
+      columnTitle: column.title,
+      folderName:  folderLabel(column.title, card.title),
+      folderUrl:   sectionDriveFolderUrl,
     })
 
     return reply.status(201).send({ card })
@@ -437,6 +457,23 @@ export async function cardRoutes(app: FastifyInstance) {
       },
     })
 
+    await recordActivity({
+      type:          'CARD_MOVED',
+      actor:         request.user,
+      boardId:       card.boardId,
+      boardTitle:    card.board.title,
+      cardId:        id,
+      cardTitle:     card.title,
+      columnId:      card.currentColumnId,
+      columnTitle:   fromColumnTitle,
+      toColumnId:    targetColumnId,
+      toColumnTitle: targetColumn.title,
+      folderName:    folderLabel(targetColumn.title, card.title),
+      folderUrl:     targetDriveFolderUrl,
+      detail:        { deadline: new Date(deadline).toISOString() },
+      occurredAt:    now,
+    })
+
     return reply.send({
       card: updatedCard,
       message: `Card moved to "${targetColumn.title}"`,
@@ -461,7 +498,13 @@ export async function cardRoutes(app: FastifyInstance) {
       if (coordMember?.role !== 'COORDINATOR') throw new AppError('Sem permissão para arquivar cards', 403)
     }
 
-    const card = await prisma.card.findUnique({ where: { id } })
+    const card = await prisma.card.findUnique({
+      where: { id },
+      include: {
+        board:         { select: { id: true, title: true } },
+        currentColumn: { select: { id: true, title: true } },
+      },
+    })
     if (!card) throw new AppError('Card not found', 404)
 
     await prisma.card.update({
@@ -484,6 +527,19 @@ export async function cardRoutes(app: FastifyInstance) {
       },
     })
 
+    await recordActivity({
+      type:        'CARD_ARCHIVED',
+      actor:       request.user,
+      boardId:     card.boardId,
+      boardTitle:  card.board.title,
+      cardId:      id,
+      cardTitle:   card.title,
+      columnId:    card.currentColumnId,
+      columnTitle: card.currentColumn.title,
+      folderName:  folderLabel(card.currentColumn.title, card.title),
+      folderUrl:   card.driveFolderUrl,
+    })
+
     return reply.send({ message: 'Card archived successfully' })
   })
 
@@ -503,7 +559,13 @@ export async function cardRoutes(app: FastifyInstance) {
       if (coordMember?.role !== 'COORDINATOR') throw new AppError('Sem permissão para restaurar cards', 403)
     }
 
-    const card = await prisma.card.findUnique({ where: { id } })
+    const card = await prisma.card.findUnique({
+      where:   { id },
+      include: {
+        board:         { select: { id: true, title: true } },
+        currentColumn: { select: { id: true, title: true } },
+      },
+    })
     if (!card) throw new AppError('Card not found', 404)
     if (!card.isArchived) throw new AppError('Card is not archived', 400)
 
@@ -532,6 +594,24 @@ export async function cardRoutes(app: FastifyInstance) {
         userAgent: request.headers['user-agent'],
         metadata:  { cardId: id, cardTitle: card.title, toColumnId: targetColumnId },
       },
+    })
+
+    // Se a etapa de origem sumiu, o card permanece na etapa atual — o relatório
+    // precisa mostrar onde ele realmente foi parar, não a etapa que não existe mais.
+    const restoredColumnId    = columnExists ? targetColumnId  : card.currentColumnId
+    const restoredColumnTitle = columnExists ? column!.title   : card.currentColumn.title
+
+    await recordActivity({
+      type:        'CARD_RESTORED',
+      actor:       request.user,
+      boardId:     card.boardId,
+      boardTitle:  card.board.title,
+      cardId:      id,
+      cardTitle:   card.title,
+      columnId:    restoredColumnId,
+      columnTitle: restoredColumnTitle,
+      folderName:  folderLabel(restoredColumnTitle, card.title),
+      folderUrl:   card.driveFolderUrl,
     })
 
     return reply.send({ message: 'Card restored successfully' })

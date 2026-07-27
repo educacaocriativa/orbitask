@@ -5,6 +5,7 @@ import { AppError } from '../utils/AppError'
 import { WhatsAppService } from '../services/WhatsAppService'
 import { googleDrive } from '../services/GoogleDriveService'
 import { columnFolderName, syncColumnFolderNames } from '../utils/columnFolderSync'
+import { recordActivity } from '../services/ActivityService'
 
 const whatsapp = new WhatsAppService()
 
@@ -84,6 +85,16 @@ export async function boardRoutes(app: FastifyInstance) {
         // Add all members to Shared Drive
         const emails = board.members.map((m) => m.user.email).filter(Boolean)
         setImmediate(() => googleDrive.addMembersToSharedDrive(emails as string[]))
+
+        await recordActivity({
+          type:       'FOLDER_CREATED',
+          actor:      request.user,
+          boardId:    board.id,
+          boardTitle: board.title,
+          folderName: board.title,
+          folderUrl:  folder.url,
+          detail:     { folderKind: 'projeto' },
+        })
       }
     } catch (err) {
       console.error('Drive board folder error:', err)
@@ -272,6 +283,18 @@ export async function boardRoutes(app: FastifyInstance) {
           await prisma.column.update({
             where: { id: column.id },
             data: { driveFolderId: folder.id, driveFolderUrl: folder.url },
+          })
+
+          await recordActivity({
+            type:        'FOLDER_CREATED',
+            actor:       request.user,
+            boardId:     board.id,
+            boardTitle:  board.title,
+            columnId:    column.id,
+            columnTitle: column.title,
+            folderName:  column.title,
+            folderUrl:   folder.url,
+            detail:      { folderKind: 'etapa' },
           })
         }
       } catch (err) {

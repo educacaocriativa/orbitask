@@ -8,6 +8,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { cn, formatRelativeDate } from '@/lib/utils'
 import toast from 'react-hot-toast'
 import { ImportCSVModal } from '@/components/admin/ImportCSVModal'
+import { ActivityReport } from '@/components/admin/ActivityReport'
 
 interface User {
   id: string; name: string; email: string; role: string
@@ -32,7 +33,7 @@ interface UserFile {
     column: { title: string; board: { id: string; title: string } }
   }
 }
-type Tab = 'stats' | 'users' | 'logs'
+type Tab = 'stats' | 'users' | 'logs' | 'reports'
 
 const ROLE_BADGE: Record<string, string> = {
   ADMIN:  'text-amber-300  bg-amber-500/12  border-amber-500/35',
@@ -601,6 +602,7 @@ export default function AdminPage() {
     { id: 'stats', label: 'Visão Geral', icon: '🌐' },
     { id: 'users', label: 'Tripulação',  icon: '👨‍🚀' },
     { id: 'logs',  label: 'Logs',        icon: '📡' },
+    { id: 'reports', label: 'Relatórios', icon: '📊' },
   ]
 
   return (
@@ -915,6 +917,9 @@ export default function AdminPage() {
                 </div>
               </motion.div>
             )}
+
+            {/* RELATÓRIOS */}
+            {activeTab === 'reports' && <ActivityReport />}
           </>
         )}
       </main>

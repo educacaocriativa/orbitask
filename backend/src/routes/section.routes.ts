@@ -5,6 +5,12 @@ import { AppError } from '../utils/AppError'
 import { enqueueNotification } from '../jobs/notificationQueue'
 import { NotificationType } from '@prisma/client'
 import { googleDrive } from '../services/GoogleDriveService'
+import { recordActivity } from '../services/ActivityService'
+
+/** Mesmo rótulo de pasta usado em card.routes.ts: "Etapa / Missão". */
+function folderLabel(columnTitle: string, cardTitle: string) {
+  return `${columnTitle} / ${cardTitle}`
+}
 
 export async function sectionRoutes(app: FastifyInstance) {
   // ── PATCH /sections/:id ──────────────────────────────────
@@ -100,6 +106,7 @@ export async function sectionRoutes(app: FastifyInstance) {
       where: { id },
       include: {
         column: { include: { columnMembers: { select: { userId: true } } } },
+        card:   { select: { id: true, title: true, boardId: true, board: { select: { title: true } } } },
       },
     })
     if (!section) throw new AppError('Section not found', 404)
@@ -177,6 +184,25 @@ export async function sectionRoutes(app: FastifyInstance) {
           cardId:    section.cardId,
           columnTitle: section.column?.title ?? null,
         })),
+      },
+    })
+
+    await recordActivity({
+      type:        'FILE_UPLOADED',
+      actor:       request.user,
+      boardId:     section.card.boardId,
+      boardTitle:  section.card.board.title,
+      cardId:      section.card.id,
+      cardTitle:   section.card.title,
+      columnId:    section.columnId,
+      columnTitle: section.column.title,
+      folderName:  folderLabel(section.column.title, section.card.title),
+      folderUrl:   section.driveFolderUrl,
+      detail: {
+        fileId:        file.id,
+        fileName:      file.originalName,
+        fileSizeBytes: file.sizeBytes,
+        mimeType:      file.mimeType,
       },
     })
 
@@ -313,13 +339,46 @@ export async function sectionRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { fileId } = request.params as { sectionId: string; fileId: string }
 
-    const file = await prisma.file.findUnique({ where: { id: fileId } })
+    const file = await prisma.file.findUnique({
+      where:   { id: fileId },
+      include: {
+        cardSection: {
+          include: {
+            column: { select: { id: true, title: true } },
+            card:   { select: { id: true, title: true, boardId: true, board: { select: { title: true } } } },
+          },
+        },
+      },
+    })
     if (!file) throw new AppError('File not found', 404)
 
     // TODO: Delete from MinIO
     // await minioClient.removeObject(MINIO_BUCKET, file.storagePath)
 
     await prisma.file.delete({ where: { id: fileId } })
+
+    // Exclusão é definitiva e não deixa rastro na tabela File — este evento é o
+    // único registro de que o arquivo existiu e de quem o apagou.
+    const section = file.cardSection
+    await recordActivity({
+      type:        'FILE_DELETED',
+      actor:       request.user,
+      boardId:     section.card.boardId,
+      boardTitle:  section.card.board.title,
+      cardId:      section.card.id,
+      cardTitle:   section.card.title,
+      columnId:    section.column.id,
+      columnTitle: section.column.title,
+      folderName:  folderLabel(section.column.title, section.card.title),
+      folderUrl:   section.driveFolderUrl,
+      detail: {
+        fileId:        file.id,
+        fileName:      file.originalName,
+        fileSizeBytes: file.sizeBytes,
+        mimeType:      file.mimeType,
+        uploadedAt:    file.createdAt.toISOString(),
+      },
+    })
 
     return reply.send({ message: 'File deleted' })
   })
