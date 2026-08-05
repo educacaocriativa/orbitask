@@ -81,6 +81,97 @@ export class GoogleDriveService {
     return this.createFolder('RECURSOS', parentFolderId)
   }
 
+  // ── Find an existing folder by name inside a parent ──────
+  async findFolder(name: string, parentId: string): Promise<{ id: string; url: string } | null> {
+    if (!this.drive) return null
+
+    try {
+      // Aspas simples no nome quebrariam a query do Drive; escapamos.
+      const safeName = name.replace(/'/g, "\\'")
+      const res = await this.drive.files.list({
+        q: `name = '${safeName}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: 'files(id, webViewLink)',
+        pageSize: 1,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        corpora: 'drive',
+        driveId: this.sharedDriveId,
+      })
+
+      const found = res.data.files?.[0]
+      return found?.id ? { id: found.id, url: found.webViewLink ?? '' } : null
+    } catch (err) {
+      console.error('GoogleDrive findFolder error:', err)
+      return null
+    }
+  }
+
+  /**
+   * Devolve a pasta existente ou cria uma nova.
+   *
+   * Necessário para a timeline: a pasta do mês é compartilhada por todos os
+   * documentos daquele mês, e duas pessoas lançando documento ao mesmo tempo
+   * criariam duas pastas com o mesmo nome — o Drive permite isso.
+   */
+  async ensureFolder(name: string, parentId: string): Promise<{ id: string; url: string } | null> {
+    const existing = await this.findFolder(name, parentId)
+    if (existing) return existing
+
+    const created = await this.createFolder(name, parentId)
+    if (created) return created
+
+    // A criação pode ter falhado por corrida com outro request; procura de novo.
+    return this.findFolder(name, parentId)
+  }
+
+  /** Raiz do Shared Drive — pai das pastas de primeiro nível (TIMELINE, projetos). */
+  get rootFolderId(): string {
+    return this.sharedDriveId
+  }
+
+  // ── Upload a file into a folder ──────────────────────────
+  async uploadFile(
+    fileName: string,
+    mimeType: string,
+    content: Buffer,
+    parentFolderId: string,
+  ): Promise<{ id: string; url: string } | null> {
+    if (!this.drive) return null
+
+    try {
+      // A Drive API espera um stream legível; Buffer puro não serve.
+      const { Readable } = await import('node:stream')
+
+      const res = await this.drive.files.create({
+        requestBody: {
+          name: fileName.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 200),
+          parents: [parentFolderId],
+        },
+        media: {
+          mimeType,
+          body: Readable.from(content),
+        },
+        supportsAllDrives: true,
+        fields: 'id, webViewLink',
+      })
+
+      return { id: res.data.id!, url: res.data.webViewLink! }
+    } catch (err) {
+      console.error('GoogleDrive uploadFile error:', err)
+      return null
+    }
+  }
+
+  // ── Delete a file ────────────────────────────────────────
+  async deleteFile(fileId: string): Promise<void> {
+    if (!this.drive) return
+    try {
+      await this.drive.files.delete({ fileId, supportsAllDrives: true })
+    } catch (err) {
+      console.error('GoogleDrive deleteFile error:', err)
+    }
+  }
+
   // ── Delete a folder (and all its contents) ───────────────
   async deleteFolder(folderId: string): Promise<void> {
     if (!this.drive) return

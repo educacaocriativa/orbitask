@@ -12,6 +12,7 @@ export interface AuthUser {
   avatarUrl?: string
   phoneWhatsapp?: string
   crmAccess?: boolean
+  timelineAccess?: boolean
 }
 
 interface AuthState {

@@ -5,10 +5,10 @@ import { prisma } from '../database/prisma'
 declare module '@fastify/jwt' {
   interface FastifyJWT {
     payload: {
-      sub: string; name: string; email: string; role: string; crmAccess?: boolean
+      sub: string; name: string; email: string; role: string; crmAccess?: boolean; timelineAccess?: boolean
     }
     user: {
-      id: string; name: string; email: string; role: string; crmAccess?: boolean
+      id: string; name: string; email: string; role: string; crmAccess?: boolean; timelineAccess?: boolean
     }
   }
 }
@@ -20,13 +20,16 @@ export async function authenticate(
   try {
     await request.jwtVerify()
 
-    const payload = request.user as unknown as { sub: string; name: string; email: string; role: string; crmAccess?: boolean }
+    const payload = request.user as unknown as {
+      sub: string; name: string; email: string; role: string; crmAccess?: boolean; timelineAccess?: boolean
+    }
     request.user = {
       id:        payload.sub,
       name:      payload.name,
       email:     payload.email,
       role:      payload.role,
       crmAccess: payload.crmAccess ?? false,
+      timelineAccess: payload.timelineAccess ?? false,
     }
   } catch {
     throw new AppError('Unauthorized: invalid or expired token', 401)

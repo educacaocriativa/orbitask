@@ -82,6 +82,8 @@ model User {
   crmAccess       Boolean  @default(false) @map("crm_access")
 
   // Admin dashboard tracking
+  timelineAccess  Boolean  @default(false) @map("timeline_access")
+
   lastAccessAt    DateTime? @map("last_access_at")
   lastCommentAt   DateTime? @map("last_comment_at")
   lastCommentText String?   @map("last_comment_text") @db.Text
@@ -107,6 +109,11 @@ model User {
   announcementsCreated    Announcement[]         @relation("AnnouncementCreator")
   announcementReplies     AnnouncementReply[]    @relation("AnnouncementReplier")
   announcementReads       AnnouncementRead[]     @relation("AnnouncementReader")
+  timelineDocuments       TimelineDocument[]     @relation("TimelineDocumentCreator")
+  timelineFiles           TimelineFile[]         @relation("TimelineFileUploader")
+  timelineMentionsIn      TimelineMention[]      @relation("TimelineMentionedUser")
+  timelineMentionsMade    TimelineMention[]      @relation("TimelineMentionedBy")
+  timelineMentionReplies  TimelineMention[]      @relation("TimelineMentionReplier")
 
   @@map("users")
 }
@@ -587,6 +594,90 @@ model AccessLog {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("access_logs")
+}
+
+// ─────────────────────────────────────────────
+//  TIMELINE (linha do tempo global)
+// ─────────────────────────────────────────────
+//
+// Uma única linha do tempo da empresa. Quem tem `User.timelineAccess` (ou é
+// ADMIN) vê o botão na navbar e pode lançar documentos nas datas liberadas.
+
+model TimelineDocument {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+
+  // Só a data importa, não a hora — é a posição do documento na linha do tempo.
+  // @db.Date evita que fuso horário empurre o documento para o dia vizinho.
+  date DateTime @db.Date
+
+  driveFolderId  String? @map("drive_folder_id")
+  driveFolderUrl String? @map("drive_folder_url") @db.Text
+
+  createdById String @map("created_by_id")
+  createdBy   User   @relation("TimelineDocumentCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  files    TimelineFile[]
+  mentions TimelineMention[]
+
+  @@index([date])
+  @@map("timeline_documents")
+}
+
+model TimelineFile {
+  id           String @id @default(uuid())
+  originalName String @map("original_name")
+  mimeType     String @map("mime_type")
+  sizeBytes    Int    @map("size_bytes")
+
+  // O arquivo mora no Drive, não no MinIO: é lá que a equipe trabalha.
+  driveFileId  String? @map("drive_file_id")
+  driveFileUrl String? @map("drive_file_url") @db.Text
+
+  documentId String           @map("document_id")
+  document   TimelineDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  uploadedById String @map("uploaded_by_id")
+  uploadedBy   User   @relation("TimelineFileUploader", fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@map("timeline_files")
+}
+
+// Espelha `Mention`, que está preso a cardSectionId por FK obrigatória.
+// Tabela própria em vez de afrouxar aquela FK: cada modelo mantém a garantia
+// de que toda menção pertence mesmo a alguma coisa.
+model TimelineMention {
+  id String @id @default(uuid())
+
+  documentId String           @map("document_id")
+  document   TimelineDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  mentionedUserId String @map("mentioned_user_id")
+  mentionedUser   User   @relation("TimelineMentionedUser", fields: [mentionedUserId], references: [id])
+
+  mentionedById String @map("mentioned_by_id")
+  mentionedBy   User   @relation("TimelineMentionedBy", fields: [mentionedById], references: [id])
+
+  whatsappSent   Boolean   @default(false) @map("whatsapp_sent")
+  whatsappSentAt DateTime? @map("whatsapp_sent_at")
+
+  reply       String?   @db.Text
+  repliedAt   DateTime? @map("replied_at")
+  repliedById String?   @map("replied_by_id")
+  repliedBy   User?     @relation("TimelineMentionReplier", fields: [repliedById], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([documentId, mentionedUserId])
+  @@index([mentionedUserId])
+  @@map("timeline_mentions")
 }
 
 // ─────────────────────────────────────────────
