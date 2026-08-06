@@ -11,8 +11,7 @@ export interface AuthUser {
   role: 'ADMIN' | 'MEMBER' | 'GUEST'
   avatarUrl?: string
   phoneWhatsapp?: string
-  crmAccess?: boolean
-  timelineAccess?: boolean
+  crmAccess?: boolean
 }
 
 interface AuthState {

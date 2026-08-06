@@ -30,6 +30,8 @@ export interface TimelineDocument {
   name: string
   description: string | null
   date: string
+  /** null enquanto o documento não foi realocado para um projeto. */
+  boardId: string | null
   driveFolderUrl: string | null
   createdAt: string
   createdBy: TimelinePerson
@@ -54,7 +56,31 @@ export interface TimelineMonthData {
   days: TimelineDay[]
 }
 
-export interface TimelineAccessUser extends TimelinePerson {
+/** Projeto na tela de seleção da Timeline. */
+export interface TimelineBoard {
+  id: string
+  title: string
+  description: string | null
+  color: string
+  /** Criado pela Timeline: não aparece em missões ativas. */
+  timelineOnly: boolean
+  driveFolderUrl: string | null
+  documentCount: number
+  memberCount: number
+  lastDocumentDate: string | null
+}
+
+export interface TimelineBoardsResponse {
+  boards: TimelineBoard[]
+  /** Documentos anteriores à separação por projeto. Só ADMIN enxerga. */
+  orphanCount: number
+}
+
+/** Pessoa na tela de gerenciar acesso de um projeto. */
+export interface TimelineBoardPerson extends TimelinePerson {
   role: string
-  timelineAccess: boolean
+  /** Já participa da timeline deste projeto. */
+  isMember: boolean
+  /** Já é membro do projeto no Kanban — aparece primeiro na lista. */
+  inProject: boolean
 }

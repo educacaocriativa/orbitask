@@ -10,13 +10,14 @@ import type { TimelinePerson, TimelineDocument } from '@/types/timeline'
 const MAX_FILE_BYTES = 50 * 1024 * 1024
 
 interface Props {
+  boardId: string
   date: string | null
   people: TimelinePerson[]
   onClose: () => void
   onCreated: (document: TimelineDocument) => void
 }
 
-export function NewDocumentModal({ date, people, onClose, onCreated }: Props) {
+export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: Props) {
   const [name, setName]               = useState('')
   const [description, setDescription] = useState('')
   const [mentioned, setMentioned]     = useState<TimelinePerson[]>([])
@@ -72,6 +73,7 @@ export function NewDocumentModal({ date, people, onClose, onCreated }: Props) {
     setSaving(true)
     try {
       const { data } = await api.post('/timeline/documents', {
+        boardId,
         name:             name.trim(),
         description:      description.trim() || undefined,
         date,

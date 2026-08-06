@@ -79,8 +79,7 @@ export class AuthService {
         name:      user.name,
         email:     user.email,
         role:      user.role,
-        crmAccess: (user as any).crmAccess ?? false,
-        timelineAccess: (user as any).timelineAccess ?? false,
+        crmAccess: (user as any).crmAccess ?? false,
       },
       { expiresIn: env.JWT_EXPIRES_IN }
     )
@@ -110,8 +109,7 @@ export class AuthService {
         role:          user.role,
         avatarUrl:     user.avatarUrl,
         phoneWhatsapp: user.phoneWhatsapp,
-        crmAccess:     (user as any).crmAccess ?? false,
-        timelineAccess: (user as any).timelineAccess ?? false,
+        crmAccess:     (user as any).crmAccess ?? false,
       },
     }
   }
@@ -139,8 +137,7 @@ export class AuthService {
         phoneWhatsapp: true,
         lastAccessAt: true,
         createdAt: true,
-        crmAccess: true,
-        timelineAccess: true,
+        crmAccess: true,
       } as any,
     })
 

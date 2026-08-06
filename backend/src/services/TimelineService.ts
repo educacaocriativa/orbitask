@@ -70,21 +70,37 @@ export function isDateOpen(date: Date, documentCount: number): boolean {
 // ── Acesso ─────────────────────────────────────────────────────────────────
 
 /**
- * Confere o acesso no BANCO, não no JWT.
+ * Participação num projeto de timeline, conferida no BANCO e não no JWT.
  *
- * O token é assinado no login e carrega a flag daquele momento. Se lêssemos
- * dele, conceder acesso só valeria no próximo login do usuário, e revogar não
- * valeria até o token expirar. Uma consulta por chave primária é barata perto
- * de errar quem entra.
+ * O token é assinado no login: lido dele, adicionar alguém a um projeto só
+ * valeria no próximo login, e remover não valeria até o token expirar.
+ *
+ * Não existe mais uma permissão global de "acesso à Timeline" — a tela é aberta
+ * a qualquer usuário logado, e o que ele enxerga são os projetos onde foi
+ * incluído. Quem não está em nenhum vê a lista vazia, não um erro.
  */
-export async function canAccessTimeline(user: { id: string; role: string }): Promise<boolean> {
+export async function isTimelineMember(boardId: string, user: { id: string; role: string }): Promise<boolean> {
   if (user.role === 'ADMIN') return true
 
-  const record = await prisma.user.findUnique({
-    where:  { id: user.id },
-    select: { timelineAccess: true, isActive: true },
+  const membership = await prisma.timelineMember.findUnique({
+    where:  { boardId_userId: { boardId, userId: user.id } },
+    select: { id: true },
   })
-  return record?.isActive === true && record.timelineAccess === true
+  return !!membership
+}
+
+/** Lança 403 quando a pessoa não participa do projeto. */
+export async function assertTimelineMember(boardId: string, user: { id: string; role: string }) {
+  if (!(await isTimelineMember(boardId, user))) {
+    throw new AppError('Você não participa da timeline deste projeto.', 403)
+  }
+}
+
+/** Só ADMIN administra projeto e pessoas da timeline. */
+export function assertAdmin(user: { role: string }, action: string) {
+  if (user.role !== 'ADMIN') {
+    throw new AppError(`Apenas administradores podem ${action}.`, 403)
+  }
 }
 
 // ── Consulta ───────────────────────────────────────────────────────────────
@@ -122,7 +138,11 @@ const DOCUMENT_INCLUDE = {
  * Devolve o mês inteiro, dia a dia — inclusive os dias sem documento, que a
  * tela precisa desenhar (apagados quando travados).
  */
-export async function getMonth(year: number, month: number): Promise<TimelineMonth> {
+/**
+ * Mês de um projeto. `boardId` null devolve os documentos órfãos — os que
+ * existiam antes da separação por projeto e ainda não foram realocados.
+ */
+export async function getMonth(year: number, month: number, boardId: string | null): Promise<TimelineMonth> {
   if (month < 1 || month > 12) throw new AppError('Mês inválido.', 400)
 
   const start = new Date(Date.UTC(year, month - 1, 1))
@@ -131,7 +151,7 @@ export async function getMonth(year: number, month: number): Promise<TimelineMon
   const lastDay = end.getUTCDate()
 
   const documents = await prisma.timelineDocument.findMany({
-    where:   { date: { gte: start, lte: end } },
+    where:   { boardId, date: { gte: start, lte: end } },
     include: DOCUMENT_INCLUDE,
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
   })
@@ -174,6 +194,7 @@ export async function getDocument(id: string) {
 // ── Criação ────────────────────────────────────────────────────────────────
 
 export interface CreateDocumentInput {
+  boardId:     string
   name:        string
   description?: string
   date:        string
@@ -186,10 +207,18 @@ export async function createDocument(input: CreateDocumentInput) {
   if (!name) throw new AppError('Informe o nome do documento.', 400)
   if (name.length > 180) throw new AppError('O nome do documento é muito longo (máximo 180 caracteres).', 400)
 
+  const board = await prisma.board.findUnique({
+    where:  { id: input.boardId },
+    select: { id: true, title: true },
+  })
+  if (!board) throw new AppError('Projeto não encontrado', 404)
+
   const date = parseDateOnly(input.date)
 
+  // A contagem é POR PROJETO: um dia cheio num projeto não destrava o mesmo dia
+  // em outro. Cada linha do tempo tem seus próprios prazos.
   const existingOnDay = await prisma.timelineDocument.count({
-    where: { date },
+    where: { boardId: board.id, date },
   })
   if (!isDateOpen(date, existingOnDay)) {
     throw new AppError(
@@ -203,6 +232,7 @@ export async function createDocument(input: CreateDocumentInput) {
       name,
       description: input.description?.trim() || null,
       date,
+      boardId:     board.id,
       createdById: input.author.id,
     },
   })
@@ -210,7 +240,7 @@ export async function createDocument(input: CreateDocumentInput) {
   // Pasta no Drive. Falha aqui não desfaz o documento: melhor um documento sem
   // pasta, que dá para recriar, do que perder o registro que a pessoa acabou
   // de fazer.
-  const folder = await ensureDocumentFolder(date, name)
+  const folder = await ensureDocumentFolder(date, name, board.title)
   if (folder) {
     await prisma.timelineDocument.update({
       where: { id: document.id },
@@ -232,17 +262,22 @@ export async function createDocument(input: CreateDocumentInput) {
   return getDocument(document.id)
 }
 
-/** TIMELINE / AAAA-MM / DD - Nome do documento */
-async function ensureDocumentFolder(date: Date, name: string) {
+/** TIMELINE / Projeto / AAAA-MM / DD - Nome do documento */
+async function ensureDocumentFolder(date: Date, name: string, boardTitle: string) {
   if (!googleDrive.isConfigured) return null
 
   const root = await googleDrive.ensureFolder(TIMELINE_ROOT_NAME, googleDrive.rootFolderId)
   if (!root) return null
 
+  // O projeto entra no caminho para o Drive espelhar a separação da tela.
+  const safeBoard = boardTitle.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 100)
+  const project = await googleDrive.ensureFolder(safeBoard, root.id)
+  if (!project) return null
+
   // getUTC*: a data é meia-noite UTC (ver parseDateOnly). Com getters locais a
   // pasta do dia 01 cairia no mês anterior.
   const monthName = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
-  const month = await googleDrive.ensureFolder(monthName, root.id)
+  const month = await googleDrive.ensureFolder(monthName, project.id)
   if (!month) return null
 
   const safeName = name.replace(/[/\\?%*:|"<>]/g, '-').substring(0, 120)
@@ -336,14 +371,19 @@ export async function attachFile(params: {
 }) {
   const document = await prisma.timelineDocument.findUnique({
     where:  { id: params.documentId },
-    select: { id: true, name: true, date: true, driveFolderId: true },
+    select: {
+      id: true, name: true, date: true, driveFolderId: true,
+      board: { select: { title: true } },
+    },
   })
   if (!document) throw new AppError('Documento não encontrado', 404)
 
   // A pasta pode não existir se o Drive estava fora do ar na criação.
   let folderId = document.driveFolderId
   if (!folderId) {
-    const folder = await ensureDocumentFolder(document.date, document.name)
+    // Documento órfão (sem projeto) cai numa pasta "Sem projeto", para o
+    // arquivo ter onde morar até alguém realocá-lo.
+    const folder = await ensureDocumentFolder(document.date, document.name, document.board?.title ?? 'Sem projeto')
     if (folder) {
       folderId = folder.id
       await prisma.timelineDocument.update({
@@ -386,12 +426,12 @@ export async function attachFile(params: {
  */
 export async function updateDocument(
   id: string,
-  input: { name?: string; description?: string | null },
+  input: { name?: string; description?: string | null; boardId?: string },
   user: { id: string; role: string },
 ) {
   const document = await prisma.timelineDocument.findUnique({
     where:  { id },
-    select: { id: true, name: true, date: true, createdById: true, driveFolderId: true },
+    select: { id: true, name: true, date: true, createdById: true, driveFolderId: true, boardId: true },
   })
   if (!document) throw new AppError('Documento não encontrado', 404)
 
@@ -405,6 +445,14 @@ export async function updateDocument(
     if (name.length > 180) throw new AppError('O nome do documento é muito longo (máximo 180 caracteres).', 400)
   }
 
+  // Realocar documento é como mover pasta de lugar: só ADMIN. É o mecanismo que
+  // tira os órfãos da área "Sem projeto".
+  if (input.boardId !== undefined) {
+    assertAdmin(user, 'mover documentos entre projetos')
+    const target = await prisma.board.findUnique({ where: { id: input.boardId }, select: { id: true } })
+    if (!target) throw new AppError('Projeto de destino não encontrado', 404)
+  }
+
   await prisma.timelineDocument.update({
     where: { id },
     data: {
@@ -412,6 +460,7 @@ export async function updateDocument(
       ...(input.description !== undefined
         ? { description: input.description?.trim() || null }
         : {}),
+      ...(input.boardId !== undefined ? { boardId: input.boardId } : {}),
     },
   })
 
@@ -434,7 +483,7 @@ export async function updateDocument(
 // ── Exclusão (só ADMIN) ────────────────────────────────────────────────────
 
 export async function deleteDocument(id: string, user: { role: string }) {
-  requireAdmin(user, 'excluir documentos')
+  assertAdmin(user, 'excluir documentos')
 
   const document = await prisma.timelineDocument.findUnique({
     where:  { id },
@@ -452,7 +501,7 @@ export async function deleteDocument(id: string, user: { role: string }) {
  * arquivo continua na pasta. Some a referência no Orbi, não o conteúdo.
  */
 export async function removeFile(fileId: string, user: { role: string }) {
-  requireAdmin(user, 'remover arquivos')
+  assertAdmin(user, 'remover arquivos')
 
   const file = await prisma.timelineFile.findUnique({
     where:  { id: fileId },
@@ -464,8 +513,254 @@ export async function removeFile(fileId: string, user: { role: string }) {
   return getDocument(file.documentId)
 }
 
-function requireAdmin(user: { role: string }, action: string) {
-  if (user.role !== 'ADMIN') {
-    throw new AppError(`Apenas administradores podem ${action}.`, 403)
+
+// ── Projetos da timeline ───────────────────────────────────────────────────
+
+/**
+ * Projetos que a pessoa enxerga na tela de seleção.
+ *
+ * ADMIN vê todos os que têm timeline (projeto marcado como timelineOnly, ou
+ * projeto comum que já recebeu documento ou membro). Os demais veem apenas
+ * onde foram incluídos.
+ */
+export async function listTimelineBoards(user: { id: string; role: string }) {
+  const isAdmin = user.role === 'ADMIN'
+
+  const boards = await prisma.board.findMany({
+    where: {
+      isArchived: false,
+      ...(isAdmin
+        ? { OR: [{ timelineOnly: true }, { timelineMembers: { some: {} } }, { timelineDocuments: { some: {} } }] }
+        : { timelineMembers: { some: { userId: user.id } } }),
+    },
+    select: {
+      id: true, title: true, description: true, color: true, timelineOnly: true,
+      driveFolderUrl: true,
+      _count: { select: { timelineDocuments: true, timelineMembers: true } },
+    },
+    orderBy: { title: 'asc' },
+  })
+
+  // Data do documento mais recente de cada projeto, para a tela mostrar
+  // "último lançamento" sem carregar todos os documentos.
+  const latest = await prisma.timelineDocument.groupBy({
+    by:    ['boardId'],
+    where: { boardId: { in: boards.map((b) => b.id) } },
+    _max:  { date: true },
+  })
+  const latestByBoard = new Map(latest.map((l) => [l.boardId, l._max.date]))
+
+  // Documentos anteriores à separação por projeto. Só ADMIN pode realocá-los,
+  // então só ele precisa saber que existem.
+  const orphanCount = isAdmin
+    ? await prisma.timelineDocument.count({ where: { boardId: null } })
+    : 0
+
+  return {
+    boards: boards.map((b) => ({
+      id:            b.id,
+      title:         b.title,
+      description:   b.description,
+      color:         b.color,
+      timelineOnly:  b.timelineOnly,
+      driveFolderUrl: b.driveFolderUrl,
+      documentCount: b._count.timelineDocuments,
+      memberCount:   b._count.timelineMembers,
+      lastDocumentDate: latestByBoard.get(b.id)
+        ? formatDateOnly(latestByBoard.get(b.id) as Date)
+        : null,
+    })),
+    orphanCount,
   }
+}
+
+/** Cria um projeto exclusivo da Timeline: não aparece em missões ativas. */
+export async function createTimelineBoard(
+  input: { title: string; description?: string; color?: string; memberIds?: string[] },
+  user: { id: string; role: string },
+) {
+  assertAdmin(user, 'criar projetos de timeline')
+
+  const title = input.title.trim()
+  if (!title) throw new AppError('Informe o nome do projeto.', 400)
+
+  const duplicate = await prisma.board.findFirst({
+    where:  { title, isArchived: false },
+    select: { id: true },
+  })
+  if (duplicate) throw new AppError(`Já existe um projeto chamado "${title}".`, 400)
+
+  const board = await prisma.board.create({
+    data: {
+      title,
+      description:  input.description?.trim() || null,
+      color:        input.color ?? '#6366f1',
+      ownerId:      user.id,
+      timelineOnly: true,
+      // Quem cria já participa nos dois níveis. Só timelineMembers deixaria o
+      // projeto nascer violando a regra "timeline só para membro do projeto".
+      members: {
+        create: [...new Set(input.memberIds ?? [])]
+          .filter((userId) => userId !== user.id) // o dono não precisa de linha
+          .map((userId) => ({ userId, role: 'MEMBER' as const })),
+      },
+      timelineMembers: {
+        create: [...new Set([user.id, ...(input.memberIds ?? [])])].map((userId) => ({ userId })),
+      },
+    },
+    select: { id: true, title: true },
+  })
+
+  // Pasta raiz do projeto no Drive. Os documentos criam as subpastas de mês.
+  if (googleDrive.isConfigured) {
+    try {
+      const root = await googleDrive.ensureFolder(TIMELINE_ROOT_NAME, googleDrive.rootFolderId)
+      if (root) {
+        const safe   = title.replace(/[/\?%*:|"<>]/g, '-').substring(0, 100)
+        const folder = await googleDrive.ensureFolder(safe, root.id)
+        if (folder) {
+          await prisma.board.update({
+            where: { id: board.id },
+            data:  { driveFolderId: folder.id, driveFolderUrl: folder.url },
+          })
+        }
+      }
+    } catch (err) {
+      console.error('Timeline: pasta do projeto não criada no Drive:', err)
+    }
+  }
+
+  return board
+}
+
+// ── Pessoas do projeto ─────────────────────────────────────────────────────
+
+/**
+ * Pessoas do projeto, para o modal de gerenciamento.
+ *
+ * Só quem já é membro do projeto pode entrar na timeline dele — é uma porta só,
+ * e não dá para burlar. `candidates` são as pessoas que ainda não fazem parte
+ * do projeto, oferecidas para inclusão a partir do próprio modal, já que um
+ * projeto criado pela Timeline não tem outra tela onde cadastrar membro.
+ */
+export async function listBoardPeople(boardId: string, user: { id: string; role: string }) {
+  assertAdmin(user, 'gerenciar pessoas da timeline')
+
+  const board = await prisma.board.findUnique({
+    where:  { id: boardId },
+    select: { id: true, title: true, timelineOnly: true, ownerId: true },
+  })
+  if (!board) throw new AppError('Projeto não encontrado', 404)
+
+  const [users, timelineMembers, boardMembers] = await Promise.all([
+    prisma.user.findMany({
+      where:   { isActive: true },
+      select:  { id: true, name: true, email: true, avatarUrl: true, role: true },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.timelineMember.findMany({ where: { boardId }, select: { userId: true } }),
+    prisma.boardMember.findMany({ where: { boardId }, select: { userId: true } }),
+  ])
+
+  const inTimeline = new Set(timelineMembers.map((m) => m.userId))
+  // O dono do projeto participa dele mesmo sem uma linha em board_members.
+  const inProject  = new Set([board.ownerId, ...boardMembers.map((m) => m.userId)])
+
+  return {
+    board: { id: board.id, title: board.title, timelineOnly: board.timelineOnly },
+    people: users
+      .filter((u) => inProject.has(u.id))
+      .map((u) => ({ ...u, isMember: inTimeline.has(u.id), inProject: true })),
+    candidates: users
+      .filter((u) => !inProject.has(u.id))
+      .map((u) => ({ ...u, isMember: false, inProject: false })),
+  }
+}
+
+/**
+ * Inclui alguém no projeto e já na timeline.
+ *
+ * Existe porque um projeto criado pela Timeline não tem quadro de missões onde
+ * cadastrar membro — este é o único caminho. Em projeto com Kanban funciona
+ * igual, e a pessoa passa a constar também como membro do projeto.
+ */
+export async function addPersonToBoard(
+  boardId: string,
+  userId: string,
+  user: { id: string; role: string },
+) {
+  assertAdmin(user, 'adicionar pessoas ao projeto')
+
+  const [board, target] = await Promise.all([
+    prisma.board.findUnique({ where: { id: boardId }, select: { id: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { id: true, isActive: true } }),
+  ])
+  if (!board)  throw new AppError('Projeto não encontrado', 404)
+  if (!target) throw new AppError('Usuário não encontrado', 404)
+  if (!target.isActive) throw new AppError('Este usuário está inativo.', 400)
+
+  await prisma.$transaction([
+    prisma.boardMember.upsert({
+      where:  { boardId_userId: { boardId, userId } },
+      update: {},
+      create: { boardId, userId, role: 'MEMBER' },
+    }),
+    prisma.timelineMember.upsert({
+      where:  { boardId_userId: { boardId, userId } },
+      update: {},
+      create: { boardId, userId },
+    }),
+  ])
+
+  return { userId, isMember: true, inProject: true }
+}
+
+export async function setBoardMembership(
+  boardId: string,
+  userId: string,
+  isMember: boolean,
+  user: { id: string; role: string },
+) {
+  assertAdmin(user, 'gerenciar pessoas da timeline')
+
+  const board = await prisma.board.findUnique({
+    where: { id: boardId }, select: { id: true, ownerId: true },
+  })
+  if (!board) throw new AppError('Projeto não encontrado', 404)
+
+  if (isMember) {
+    // A regra "timeline só para quem está no projeto" é verificada aqui, e não
+    // só escondendo opções na tela — senão bastaria chamar a API direto.
+    const belongs = board.ownerId === userId || !!(await prisma.boardMember.findUnique({
+      where:  { boardId_userId: { boardId, userId } },
+      select: { id: true },
+    }))
+    if (!belongs) {
+      throw new AppError(
+        'Esta pessoa não faz parte do projeto. Adicione-a ao projeto primeiro.',
+        400,
+      )
+    }
+
+    await prisma.timelineMember.upsert({
+      where:  { boardId_userId: { boardId, userId } },
+      update: {},
+      create: { boardId, userId },
+    })
+  } else {
+    await prisma.timelineMember.deleteMany({ where: { boardId, userId } })
+  }
+
+  return { userId, isMember }
+}
+
+/** Documentos sem projeto, para a tela de realocação. */
+export async function listOrphanDocuments(user: { id: string; role: string }) {
+  assertAdmin(user, 'ver documentos sem projeto')
+
+  return prisma.timelineDocument.findMany({
+    where:   { boardId: null },
+    include: DOCUMENT_INCLUDE,
+    orderBy: { date: 'asc' },
+  })
 }

@@ -82,8 +82,6 @@ model User {
   crmAccess       Boolean  @default(false) @map("crm_access")
 
   // Admin dashboard tracking
-  timelineAccess  Boolean  @default(false) @map("timeline_access")
-
   lastAccessAt    DateTime? @map("last_access_at")
   lastCommentAt   DateTime? @map("last_comment_at")
   lastCommentText String?   @map("last_comment_text") @db.Text
@@ -110,6 +108,7 @@ model User {
   announcementReplies     AnnouncementReply[]    @relation("AnnouncementReplier")
   announcementReads       AnnouncementRead[]     @relation("AnnouncementReader")
   timelineDocuments       TimelineDocument[]     @relation("TimelineDocumentCreator")
+  timelineMemberships     TimelineMember[]
   timelineFiles           TimelineFile[]         @relation("TimelineFileUploader")
   timelineMentionsIn      TimelineMention[]      @relation("TimelineMentionedUser")
   timelineMentionsMade    TimelineMention[]      @relation("TimelineMentionedBy")
@@ -133,6 +132,10 @@ model Board {
   driveFolderId  String? @map("drive_folder_id")
   driveFolderUrl String? @map("drive_folder_url") @db.Text
 
+  /// Projeto criado pela Timeline: não aparece em missões ativas nem no Kanban.
+  /// Um projeto comum (false) pode ter timeline E Kanban ao mesmo tempo.
+  timelineOnly Boolean @default(false) @map("timeline_only")
+
   ownerId String @map("owner_id")
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
@@ -142,6 +145,9 @@ model Board {
   columns Column[]
   cards   Card[]
   members BoardMember[]
+
+  timelineDocuments TimelineDocument[]
+  timelineMembers   TimelineMember[]
 
   @@map("boards")
 }
@@ -603,10 +609,34 @@ model AccessLog {
 // Uma única linha do tempo da empresa. Quem tem `User.timelineAccess` (ou é
 // ADMIN) vê o botão na navbar e pode lançar documentos nas datas liberadas.
 
+/// Quem participa da timeline de um projeto. Substitui a antiga flag global
+/// `User.timelineAccess`: o acesso agora é por projeto, não por recurso.
+model TimelineMember {
+  id String @id @default(uuid())
+
+  boardId String @map("board_id")
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([boardId, userId])
+  @@index([userId])
+  @@map("timeline_members")
+}
+
 model TimelineDocument {
   id          String   @id @default(uuid())
   name        String
   description String?  @db.Text
+
+  /// Anulável de propósito: os documentos lançados antes da separação por
+  /// projeto não pertencem a nenhum. Ficam numa área "Sem projeto" até que
+  /// alguém os realoque — inventar um dono seria pior que admitir o órfão.
+  boardId String? @map("board_id")
+  board   Board?  @relation(fields: [boardId], references: [id], onDelete: Cascade)
 
   // Só a data importa, não a hora — é a posição do documento na linha do tempo.
   // @db.Date evita que fuso horário empurre o documento para o dia vizinho.
@@ -624,6 +654,7 @@ model TimelineDocument {
   files    TimelineFile[]
   mentions TimelineMention[]
 
+  @@index([boardId, date])
   @@index([date])
   @@map("timeline_documents")
 }

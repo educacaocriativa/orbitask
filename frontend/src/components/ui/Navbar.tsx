@@ -31,7 +31,6 @@ export function Navbar() {
       const changed =
         data.user.role           !== user.role ||
         data.user.crmAccess      !== user.crmAccess ||
-        data.user.timelineAccess !== user.timelineAccess ||
         data.user.name           !== user.name
       if (changed) setUser({ ...user, ...data.user })
     }).catch(() => {})
@@ -146,20 +145,19 @@ export function Navbar() {
             </button>
           )}
 
-          {/* Timeline badge — admin ou usuário adicionado à lista */}
-          {(user?.role === 'ADMIN' || user?.timelineAccess) && (
-            <Link
-              href="/timeline"
-              className={cn(
-                'hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg',
-                'font-display tracking-wider text-cyan-400/80',
-                'border border-cyan-500/20 hover:border-cyan-500/45',
-                'hover:bg-cyan-500/5 transition-all duration-200',
-              )}
-            >
-              🗓 TIMELINE
-            </Link>
-          )}
+          {/* Timeline — aberta a todos; o que a pessoa vê são os projetos
+              em que foi incluída (a lista pode vir vazia). */}
+          <Link
+            href="/timeline"
+            className={cn(
+              'hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg',
+              'font-display tracking-wider text-cyan-400/80',
+              'border border-cyan-500/20 hover:border-cyan-500/45',
+              'hover:bg-cyan-500/5 transition-all duration-200',
+            )}
+          >
+            🗓 TIMELINE
+          </Link>
 
           {/* CRM badge — admin ou usuário com acesso */}
           {(user?.role === 'ADMIN' || user?.crmAccess) && (

@@ -31,6 +31,8 @@ export async function boardRoutes(app: FastifyInstance) {
     const boards = await prisma.board.findMany({
       where: {
         isArchived: false,
+        // Projeto criado pela Timeline não tem Kanban e não entra em missões ativas.
+        timelineOnly: false,
         OR: [
           { ownerId: userId },
           { members: { some: { userId } } },
@@ -655,7 +657,7 @@ export async function boardRoutes(app: FastifyInstance) {
     if (request.user.role !== 'ADMIN') throw new AppError('Acesso negado', 403)
 
     const boards = await prisma.board.findMany({
-      where: { isArchived: true },
+      where: { isArchived: true, timelineOnly: false },
       include: {
         owner: { select: { id: true, name: true, avatarUrl: true } },
         _count: { select: { columns: true, cards: true } },

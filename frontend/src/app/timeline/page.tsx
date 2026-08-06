@@ -1,204 +1,185 @@
 'use client'
 import { useCallback, useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
+import Link from 'next/link'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { Navbar } from '@/components/ui/Navbar'
 import { useAuthStore } from '@/stores/authStore'
-import { TimelineSpine } from '@/components/timeline/TimelineSpine'
-import { NewDocumentModal } from '@/components/timeline/NewDocumentModal'
-import { DocumentDetailModal } from '@/components/timeline/DocumentDetailModal'
-import { TimelineAccessModal } from '@/components/timeline/TimelineAccessModal'
-import type { TimelineDocument, TimelineMonthData, TimelinePerson } from '@/types/timeline'
+import { NewTimelineBoardModal } from '@/components/timeline/NewTimelineBoardModal'
+import { OrphanDocumentsModal } from '@/components/timeline/OrphanDocumentsModal'
+import { cn } from '@/lib/utils'
+import type { TimelineBoard, TimelineBoardsResponse } from '@/types/timeline'
 
-export default function TimelinePage() {
-  const { user } = useAuthStore()
-  const isAdmin = user?.role === 'ADMIN'
+export default function TimelineBoardsPage() {
+  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMIN')
 
-  const today = new Date()
-  const [year, setYear]   = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth() + 1)
+  const [boards, setBoards]           = useState<TimelineBoard[]>([])
+  const [orphanCount, setOrphanCount] = useState(0)
+  const [loading, setLoading]         = useState(true)
+  const [showCreate, setShowCreate]   = useState(false)
+  const [showOrphans, setShowOrphans] = useState(false)
 
-  const [data, setData]       = useState<TimelineMonthData | null>(null)
-  const [people, setPeople]   = useState<TimelinePerson[]>([])
-  const [loading, setLoading] = useState(true)
-  const [denied, setDenied]   = useState(false)
-
-  const [addingOnDate, setAddingOnDate] = useState<string | null>(null)
-  const [openDocument, setOpenDocument] = useState<TimelineDocument | null>(null)
-  const [showAccess, setShowAccess]     = useState(false)
-
-  const loadMonth = useCallback(async (y: number, m: number) => {
-    setLoading(true)
+  const load = useCallback(async () => {
     try {
-      const { data } = await api.get<TimelineMonthData>('/timeline', { params: { year: y, month: m } })
-      setData(data)
-      setDenied(false)
-    } catch (err: any) {
-      if (err?.response?.status === 403) setDenied(true)
-      else toast.error('Não foi possível carregar a linha do tempo')
+      const { data } = await api.get<TimelineBoardsResponse>('/timeline/boards')
+      setBoards(data.boards)
+      setOrphanCount(data.orphanCount)
+    } catch {
+      toast.error('Não foi possível carregar os projetos')
     } finally {
       setLoading(false)
     }
   }, [])
 
-  const loadPeople = useCallback(async () => {
-    try {
-      const { data } = await api.get('/timeline/people')
-      setPeople(data.people)
-    } catch { /* a marcação fica indisponível, o resto da tela segue */ }
-  }, [])
-
-  useEffect(() => { loadMonth(year, month) }, [year, month, loadMonth])
-  useEffect(() => { loadPeople() }, [loadPeople])
-
-  function shiftMonth(delta: number) {
-    const next = new Date(year, month - 1 + delta, 1)
-    setYear(next.getFullYear())
-    setMonth(next.getMonth() + 1)
-  }
-
-  function goToToday() {
-    const now = new Date()
-    setYear(now.getFullYear())
-    setMonth(now.getMonth() + 1)
-  }
-
-  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth() + 1
-
-  /** Recoloca o documento alterado no dia certo, sem recarregar o mês inteiro. */
-  function applyDocument(document: TimelineDocument) {
-    setData((prev) => {
-      if (!prev) return prev
-      const key = document.date.slice(0, 10)
-      return {
-        ...prev,
-        days: prev.days.map((day) => {
-          if (day.date !== key) return day
-          const exists = day.documents.some((d) => d.id === document.id)
-          return {
-            ...day,
-            isOpen: true, // o dia passou a ter documento, então continua aberto
-            documents: exists
-              ? day.documents.map((d) => (d.id === document.id ? document : d))
-              : [...day.documents, document],
-          }
-        }),
-      }
-    })
-    setOpenDocument((current) => (current?.id === document.id ? document : current))
-  }
-
-  function removeDocument(documentId: string) {
-    setData((prev) => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        days: prev.days.map((day) => {
-          const documents = day.documents.filter((d) => d.id !== documentId)
-          if (documents.length === day.documents.length) return day
-          // Se o dia ficou vazio e já passou, ele volta a ser travado.
-          return { ...day, documents, isOpen: documents.length > 0 || !day.isPast }
-        }),
-      }
-    })
-  }
-
-  if (denied) {
-    return (
-      <div className="min-h-screen">
-        <Navbar />
-        <main className="max-w-3xl mx-auto px-5 py-24 text-center">
-          <div className="text-5xl mb-4">🔒</div>
-          <h1 className="font-display text-xl font-black text-white tracking-wide mb-2">
-            Você ainda não tem acesso à Timeline
-          </h1>
-          <p className="text-sm font-body text-white/55">
-            Peça a um administrador para adicionar você.
-          </p>
-        </main>
-      </div>
-    )
-  }
+  useEffect(() => { load() }, [load])
 
   return (
     <div className="min-h-screen">
       <Navbar />
-      <main className="max-w-5xl mx-auto px-5 py-8">
+      <main className="max-w-6xl mx-auto px-6 py-10">
 
-        {/* Cabeçalho */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-7">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
           <p className="text-xs font-display font-black tracking-[0.3em] text-cyan-400/80 mb-1.5 uppercase">
             🗓 Linha do tempo
           </p>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h1 className="font-display text-2xl font-black text-white tracking-wide capitalize">
-              {data?.label ?? '—'}
-            </h1>
-
-            <div className="flex items-center gap-2">
-              {isAdmin && (
-                <button
-                  onClick={() => setShowAccess(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-neon-amber/30 bg-neon-amber/8 text-amber-300 text-xs font-body font-bold hover:bg-neon-amber/16 transition-all"
-                >
-                  👥 Gerenciar pessoas
-                </button>
-              )}
-
-              <div className="flex items-center gap-1 p-1 rounded-xl glass-strong border border-white/14">
-                <button onClick={() => shiftMonth(-1)} aria-label="Mês anterior"
-                  className="px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/6 transition-all text-sm">
-                  ←
-                </button>
-                <button onClick={goToToday} disabled={isCurrentMonth}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-body font-bold text-white/60 hover:text-white hover:bg-white/6 disabled:opacity-30 transition-all">
-                  hoje
-                </button>
-                <button onClick={() => shiftMonth(1)} aria-label="Próximo mês"
-                  className="px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/6 transition-all text-sm">
-                  →
-                </button>
-              </div>
+            <div>
+              <h1 className="font-display text-2xl font-black text-white tracking-wide">
+                Escolha um projeto
+              </h1>
+              <p className="text-sm font-body text-white/50 mt-1">
+                Cada projeto tem a sua própria linha do tempo de documentos.
+              </p>
             </div>
+
+            {isAdmin && (
+              <motion.button
+                onClick={() => setShowCreate(true)}
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                className="px-4 py-2 rounded-xl border border-neon-violet/55 bg-neon-violet/25 text-white text-sm font-display font-black tracking-wide hover:bg-neon-violet/35 transition-all"
+              >
+                + Novo projeto
+              </motion.button>
+            )}
           </div>
         </motion.div>
+
+        {/* Documentos anteriores à separação por projeto */}
+        {isAdmin && orphanCount > 0 && (
+          <motion.button
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+            onClick={() => setShowOrphans(true)}
+            className="w-full mb-6 glass rounded-2xl border border-amber-500/30 bg-amber-500/6 p-4 flex items-center gap-3 text-left hover:bg-amber-500/10 transition-colors"
+          >
+            <span className="text-2xl">📥</span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-body font-semibold text-amber-200">
+                {orphanCount} {orphanCount === 1 ? 'documento sem projeto' : 'documentos sem projeto'}
+              </span>
+              <span className="block text-xs font-body text-amber-200/70 mt-0.5">
+                Lançados antes da separação por projeto. Clique para escolher o destino de cada um.
+              </span>
+            </span>
+            <span className="text-amber-300/60 text-sm shrink-0">organizar →</span>
+          </motion.button>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-24">
             <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
               className="text-4xl">🛸</motion.div>
           </div>
-        ) : data ? (
-          <TimelineSpine
-            days={data.days}
-            onAddDocument={setAddingOnDate}
-            onOpenDocument={setOpenDocument}
-          />
-        ) : null}
+        ) : boards.length === 0 ? (
+          <div className="glass rounded-2xl border border-white/14 p-12 text-center">
+            <div className="text-4xl mb-3">🗓</div>
+            <p className="text-sm font-body text-white/60 max-w-md mx-auto">
+              {isAdmin
+                ? 'Nenhum projeto com linha do tempo ainda. Crie o primeiro no botão acima.'
+                : 'Você ainda não foi incluído em nenhuma linha do tempo. Peça a um administrador para adicionar você a um projeto.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {boards.map((board, i) => (
+              <motion.div
+                key={board.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.04, 0.3) }}
+              >
+                <Link
+                  href={`/timeline/${board.id}`}
+                  className="block glass rounded-2xl border border-white/14 p-5 h-full hover:border-white/28 hover:bg-white/4 transition-all group"
+                >
+                  <div className="flex items-start gap-3 mb-3">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0"
+                      style={{ background: board.color }}
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h2 className="font-display text-base font-black text-white/90 tracking-wide truncate group-hover:text-white">
+                        {board.title}
+                      </h2>
+                      {board.description && (
+                        <p className="text-xs font-body text-white/45 mt-1 line-clamp-2">
+                          {board.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-body">
+                    <span className="px-2 py-1 rounded-lg border border-white/10 bg-white/3 text-white/60">
+                      📄 {board.documentCount} {board.documentCount === 1 ? 'documento' : 'documentos'}
+                    </span>
+                    <span className="px-2 py-1 rounded-lg border border-white/10 bg-white/3 text-white/60">
+                      👥 {board.memberCount}
+                    </span>
+                    {!board.timelineOnly && (
+                      <span
+                        className="px-2 py-1 rounded-lg border border-violet-500/25 bg-violet-500/8 text-violet-300"
+                        title="Este projeto também tem quadro de missões"
+                      >
+                        + Kanban
+                      </span>
+                    )}
+                  </div>
+
+                  <p className={cn(
+                    'text-[11px] font-body mt-3',
+                    board.lastDocumentDate ? 'text-white/35' : 'text-white/25',
+                  )}>
+                    {board.lastDocumentDate
+                      ? `último lançamento em ${formatDate(board.lastDocumentDate)}`
+                      : 'nenhum documento lançado'}
+                  </p>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+        )}
       </main>
 
-      <NewDocumentModal
-        date={addingOnDate}
-        people={people}
-        onClose={() => setAddingOnDate(null)}
-        onCreated={applyDocument}
+      <NewTimelineBoardModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={load}
       />
 
-      {openDocument && (
-        <DocumentDetailModal
-          document={openDocument}
-          onClose={() => setOpenDocument(null)}
-          onChanged={applyDocument}
-          onDeleted={removeDocument}
-        />
-      )}
-
-      <TimelineAccessModal
-        open={showAccess}
-        onClose={() => setShowAccess(false)}
-        onChanged={loadPeople}
+      <OrphanDocumentsModal
+        open={showOrphans}
+        boards={boards}
+        onClose={() => setShowOrphans(false)}
+        onChanged={load}
       />
     </div>
   )
+}
+
+function formatDate(date: string): string {
+  // Meio-dia fixa o dia em qualquer fuso: `new Date('2026-08-05')` seria
+  // meia-noite UTC e exibiria 04/08 no Brasil.
+  return new Date(`${date.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR')
 }
