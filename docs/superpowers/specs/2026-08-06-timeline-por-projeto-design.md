@@ -10,14 +10,23 @@ Abrir a Timeline passa a mostrar uma tela de seleção de projeto, no mesmo form
 | Questão | Decisão |
 |---|---|
 | Projeto criado pela Timeline | Recebe `timelineOnly` e **some** de missões ativas e do Kanban |
-| Quem vê cada projeto | Só quem foi incluído naquele projeto (`TimelineMember`) |
+| Quais projetos existem na Timeline | **Todas as missões ativas**, mais os projetos só-timeline |
+| Quem vê cada projeto | Membro da missão, dono, ou incluído na timeline dela |
 | Quem pode ser incluído | **Só quem já é membro do projeto** (`BoardMember` ou dono) |
 | Botão TIMELINE na navbar | Aberto a **qualquer usuário logado** |
 | Lista global `User.timelineAccess` | **Removida** — perdeu a função |
 | Documentos já existentes | Ficam sem projeto e são realocados um a um numa tela própria |
 | Gerenciar pessoas | Só ADMIN, de dentro do projeto |
 
-Um projeto comum do Kanban também pode ter timeline: basta incluir alguém nela. Os dois convivem, e o cartão na tela de seleção mostra `+ Kanban` para diferenciar.
+## Toda missão tem linha do tempo
+
+Não existe "ativar timeline". Toda missão ativa aparece na tela de seleção e já aceita documento, ao lado dos projetos criados só para a Timeline. O cartão mostra `+ Kanban` para diferenciar quem também tem quadro de etapas.
+
+A primeira versão exigia que o projeto já tivesse participante ou documento para aparecer. O resultado em produção foi a tela abrindo vazia: o único caminho aparente era recriar as missões pelo botão "+ Novo projeto", que então barrava com "já existe um projeto com esse nome". Duas falhas somadas — a lista escondia o que já existia, e a mensagem de erro não dizia o que fazer.
+
+Por isso, `isTimelineMember` também aceita quem é membro da missão ou dono dela. Sem isso a missão apareceria na lista e daria 403 ao abrir. `TimelineMember` continua existindo para o caso oposto: incluir na timeline alguém que **não** é da missão — um convidado pontual.
+
+Consequência a registrar: remover uma pessoa da timeline **não** tira o acesso de quem é membro da missão, porque o acesso vem dela. Para tirar, remove-se da missão. Isso tem cobertura de teste.
 
 ## Modelo de dados
 

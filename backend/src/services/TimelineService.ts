@@ -82,11 +82,24 @@ export function isDateOpen(date: Date, documentCount: number): boolean {
 export async function isTimelineMember(boardId: string, user: { id: string; role: string }): Promise<boolean> {
   if (user.role === 'ADMIN') return true
 
-  const membership = await prisma.timelineMember.findUnique({
-    where:  { boardId_userId: { boardId, userId: user.id } },
-    select: { id: true },
-  })
-  return !!membership
+  // Participar da missão já dá acesso à linha do tempo dela: toda missão tem
+  // timeline, e exigir uma segunda inclusão faria a missão aparecer na lista
+  // e depois dar 403 ao abrir. `TimelineMember` continua existindo para
+  // incluir quem NÃO é da missão — um convidado pontual.
+  const [timelineMember, board] = await Promise.all([
+    prisma.timelineMember.findUnique({
+      where:  { boardId_userId: { boardId, userId: user.id } },
+      select: { id: true },
+    }),
+    prisma.board.findUnique({
+      where:  { id: boardId },
+      select: { ownerId: true, members: { where: { userId: user.id }, select: { id: true } } },
+    }),
+  ])
+
+  if (timelineMember) return true
+  if (!board) return false
+  return board.ownerId === user.id || board.members.length > 0
 }
 
 /** Lança 403 quando a pessoa não participa do projeto. */
@@ -519,9 +532,12 @@ export async function removeFile(fileId: string, user: { role: string }) {
 /**
  * Projetos que a pessoa enxerga na tela de seleção.
  *
- * ADMIN vê todos os que têm timeline (projeto marcado como timelineOnly, ou
- * projeto comum que já recebeu documento ou membro). Os demais veem apenas
- * onde foram incluídos.
+ * Toda missão tem linha do tempo — não existe "ativar timeline". O que muda é
+ * quem enxerga cada uma: ADMIN vê todos os projetos ativos; os demais veem
+ * aqueles onde participam da timeline OU já são membros do projeto.
+ *
+ * Incluir o membro do projeto é o que evita a tela abrir vazia: quem trabalha
+ * numa missão chega na Timeline e já encontra a missão dele lá.
  */
 export async function listTimelineBoards(user: { id: string; role: string }) {
   const isAdmin = user.role === 'ADMIN'
@@ -530,8 +546,14 @@ export async function listTimelineBoards(user: { id: string; role: string }) {
     where: {
       isArchived: false,
       ...(isAdmin
-        ? { OR: [{ timelineOnly: true }, { timelineMembers: { some: {} } }, { timelineDocuments: { some: {} } }] }
-        : { timelineMembers: { some: { userId: user.id } } }),
+        ? {}
+        : {
+            OR: [
+              { timelineMembers: { some: { userId: user.id } } },
+              { members: { some: { userId: user.id } } },
+              { ownerId: user.id },
+            ],
+          }),
     },
     select: {
       id: true, title: true, description: true, color: true, timelineOnly: true,
@@ -584,11 +606,21 @@ export async function createTimelineBoard(
   const title = input.title.trim()
   if (!title) throw new AppError('Informe o nome do projeto.', 400)
 
+  // Toda missão já tem linha do tempo, então recriar uma que existe não é só
+  // duplicidade de nome: é trabalho desnecessário. A mensagem precisa dizer
+  // isso, em vez de só barrar.
   const duplicate = await prisma.board.findFirst({
     where:  { title, isArchived: false },
-    select: { id: true },
+    select: { id: true, timelineOnly: true },
   })
-  if (duplicate) throw new AppError(`Já existe um projeto chamado "${title}".`, 400)
+  if (duplicate) {
+    throw new AppError(
+      duplicate.timelineOnly
+        ? `Já existe um projeto de timeline chamado "${title}".`
+        : `"${title}" já é uma missão e a linha do tempo dela já está disponível — procure na lista em vez de criar de novo.`,
+      400,
+    )
+  }
 
   const board = await prisma.board.create({
     data: {
