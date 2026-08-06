@@ -63,9 +63,17 @@ Inventar um dono para eles seria pior que admitir que estão órfãos.
 
 A migration foi montada extraindo do script gerado apenas as instruções desta mudança, e depois **validada contra um banco em estado de produção**: um MySQL limpo com todas as migrations aplicadas, mais `crm_access` e `archived_at` adicionados à mão para reproduzir o desvio real. A migration aplicou sem erro nesse banco.
 
-## Trava de data agora é por projeto
+## Só o dia de hoje aceita documento
 
-A regra continua a mesma (futuro aberto, passado vazio travado, passado com documento aberto), mas a contagem é feita **dentro do projeto**. Um dia destravado no projeto A permanece travado no B — cada linha do tempo tem seus próprios prazos. Isso está coberto por teste.
+A regra anterior (futuro aberto, passado vazio travado, passado com documento aberto) foi substituída: **apenas o dia corrente recebe documento**. Passado e futuro são somente leitura.
+
+A razão é o que a linha do tempo precisa provar. Podendo escolher a data, o registro deixa de dizer *quando a coisa foi feita* e passa a dizer *quando alguém decidiu que ela teria sido feita*. Com a trava, a data é consequência do ato.
+
+Documentos já existentes em outras datas — inclusive futuras, lançados sob a regra antiga — continuam visíveis e abríveis, com a pasta no Drive intacta. Some apenas o botão de adicionar. Nada foi movido nem apagado.
+
+Como agora a regra depende só da data, ela vale igual em todos os projetos; a contagem por projeto deixou de importar. `isDateOpen` mantém o parâmetro `documentCount` na assinatura (ignorado) porque `getMonth` a chama por dia e a regra pode voltar a depender disso.
+
+Na tela, dia vazio que não é hoje aparece como traço apagado: "sem documento" no passado, "aguardando o dia" no futuro — sem isso um mês à frente viraria trinta cartões vazios idênticos.
 
 ## Acesso
 

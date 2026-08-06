@@ -62,16 +62,17 @@ function DayRow({
   const dayNumber = Number(day.date.slice(8, 10))
   const weekday   = WEEKDAYS[new Date(`${day.date}T12:00:00`).getDay()]
   const hasDocs   = day.documents.length > 0
-  const isLocked  = !day.isOpen
 
-  // Dia passado e vazio: nada a mostrar e nada a fazer.
-  if (isLocked && !hasDocs) {
+  // Dia vazio que não é hoje vira um traço apagado — vale tanto para o passado
+  // (nada aconteceu) quanto para o futuro (ainda não chegou). Sem isso, um mês
+  // à frente viraria 30 cartões vazios idênticos.
+  if (!day.isOpen && !hasDocs) {
     return (
       <li className="relative flex items-center min-h-[34px] pl-14 md:pl-0">
         <Marker dayNumber={dayNumber} variant="locked" />
         <div className={cn('md:w-1/2', side === 'left' ? 'md:pr-10 md:text-right' : 'md:ml-auto md:pl-10')}>
           <span className="text-[11px] font-body text-white/18 select-none">
-            {weekday} · sem documento
+            {weekday} · {day.isPast ? 'sem documento' : 'aguardando o dia'}
           </span>
         </div>
       </li>
@@ -169,7 +170,7 @@ function DayRow({
             </button>
           ) : (
             <p className="text-[11px] font-body text-white/30 text-center py-1">
-              Data encerrada — só consulta
+              {day.isPast ? 'Dia encerrado — só consulta' : 'Ainda não chegou — só no dia'}
             </p>
           )}
         </div>

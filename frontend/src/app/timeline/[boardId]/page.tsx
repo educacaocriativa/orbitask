@@ -91,9 +91,10 @@ export default function TimelineBoardPage() {
         days: prev.days.map((day) => {
           if (day.date !== key) return day
           const exists = day.documents.some((d) => d.id === document.id)
+          // `isOpen` não muda: só o dia de hoje aceita documento, e ter ou não
+          // documento não influencia nisso.
           return {
             ...day,
-            isOpen: true, // o dia passou a ter documento, então continua aberto
             documents: exists
               ? day.documents.map((d) => (d.id === document.id ? document : d))
               : [...day.documents, document],
@@ -112,8 +113,8 @@ export default function TimelineBoardPage() {
         days: prev.days.map((day) => {
           const documents = day.documents.filter((d) => d.id !== documentId)
           if (documents.length === day.documents.length) return day
-          // Se o dia ficou vazio e já passou, ele volta a ser travado.
-          return { ...day, documents, isOpen: documents.length > 0 || !day.isPast }
+          // `isOpen` continua valendo pela data, não pela quantidade.
+          return { ...day, documents }
         }),
       }
     })

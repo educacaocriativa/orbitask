@@ -51,20 +51,22 @@ function startOfToday(): Date {
 }
 
 /**
- * Regra de liberação da data, como definida pelo cliente:
+ * Só o dia de hoje aceita documento novo. Passado e futuro são leitura.
  *
- *   hoje ou futuro          -> aberta
- *   passado COM documento   -> aberta (continua recebendo)
- *   passado VAZIA           -> travada
+ * A linha do tempo registra o que aconteceu no dia em que aconteceu: sem isso,
+ * um documento pode ser lançado com data escolhida a dedo e o registro deixa de
+ * valer como prova de quando a coisa foi feita.
  *
- * Vale para o backend também, não só para esconder o botão na tela: uma trava
- * que só existe no frontend não é trava.
+ * Documentos já existentes em outras datas continuam visíveis e abríveis — só
+ * não recebem companhia.
+ *
+ * `documentCount` não é mais usado; permanece na assinatura porque `getMonth`
+ * a chama por dia e a regra pode voltar a depender disso.
  */
-export function isDateOpen(date: Date, documentCount: number): boolean {
+export function isDateOpen(date: Date, _documentCount = 0): boolean {
   // Normaliza para meia-noite UTC — a mesma representação de parseDateOnly.
   const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
-  if (day.getTime() >= startOfToday().getTime()) return true
-  return documentCount > 0
+  return day.getTime() === startOfToday().getTime()
 }
 
 // ── Acesso ─────────────────────────────────────────────────────────────────
@@ -228,14 +230,11 @@ export async function createDocument(input: CreateDocumentInput) {
 
   const date = parseDateOnly(input.date)
 
-  // A contagem é POR PROJETO: um dia cheio num projeto não destrava o mesmo dia
-  // em outro. Cada linha do tempo tem seus próprios prazos.
-  const existingOnDay = await prisma.timelineDocument.count({
-    where: { boardId: board.id, date },
-  })
-  if (!isDateOpen(date, existingOnDay)) {
+  // Validado aqui, e não só escondendo o botão na tela: uma trava que existe
+  // apenas no frontend é contornável chamando a API direto.
+  if (!isDateOpen(date)) {
     throw new AppError(
-      'Esta data já passou e não recebeu nenhum documento. Não é mais possível adicionar.',
+      'Documentos só podem ser lançados no dia de hoje. Dias anteriores e futuros são somente leitura.',
       400,
     )
   }
