@@ -7,6 +7,11 @@ import type { TimelineDay, TimelineDocument } from '@/types/timeline'
 
 const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
 
+/** Espaço no cartão é curto: primeiro nome basta para identificar. */
+function firstName(name: string): string {
+  return name.trim().split(/\s+/)[0]
+}
+
 interface Props {
   days: TimelineDay[]
   onAddDocument: (date: string) => void
@@ -157,13 +162,35 @@ function DayRow({
                         {(() => {
                           const approvers = doc.mentions.filter((m) => m.isApprover)
                           if (approvers.length === 0) return null
-                          return approvers.some((m) => m.mentionedUser.id === currentUserId && m.approval === 'PENDING') ? (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/12 text-amber-300 font-body font-bold">
-                              aguarda você
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-body text-white/35">
-                              {approvers.filter((m) => m.approval !== 'PENDING').length}/{approvers.length} decidiram
+
+                          if (approvers.some((m) => m.mentionedUser.id === currentUserId && m.approval === 'PENDING')) {
+                            return (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/12 text-amber-300 font-body font-bold">
+                                aguarda você
+                              </span>
+                            )
+                          }
+
+                          // Nome de quem falta, para saber de quem cobrar sem
+                          // precisar abrir o documento.
+                          const faltam = approvers.filter((m) => m.approval === 'PENDING')
+                          if (faltam.length === 0) {
+                            const reprovaram = approvers.filter((m) => m.approval === 'REJECTED')
+                            return (
+                              <span className={cn(
+                                'text-[10px] font-body',
+                                reprovaram.length > 0 ? 'text-red-300/80' : 'text-emerald-300/70',
+                              )}>
+                                {reprovaram.length > 0
+                                  ? `✕ ${reprovaram.map((m) => firstName(m.mentionedUser.name)).join(', ')} reprovou`
+                                  : '✓ todos aprovaram'}
+                              </span>
+                            )
+                          }
+                          return (
+                            <span className="text-[10px] font-body text-amber-300/70">
+                              ⏳ aguarda {faltam.slice(0, 2).map((m) => firstName(m.mentionedUser.name)).join(', ')}
+                              {faltam.length > 2 && ` +${faltam.length - 2}`}
                             </span>
                           )
                         })()}

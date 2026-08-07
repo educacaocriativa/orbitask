@@ -359,10 +359,27 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
               <section>
                 <h3 className="text-[11px] font-display font-black tracking-widest text-white/40 uppercase mb-2">
                   Aprovações
-                  <span className="ml-1.5 text-white/25 font-body font-normal normal-case tracking-normal">
-                    · {approvers.filter((m) => m.approval !== 'PENDING').length} de {approvers.length} decidiram
-                  </span>
                 </h3>
+
+                {/* Resumo por estado, com os nomes — responde "quem aprovou,
+                    quem reprovou, quem falta" sem percorrer a lista. */}
+                <div className="mb-2.5 space-y-1">
+                  {(['APPROVED', 'REJECTED', 'PENDING'] as const).map((state) => {
+                    const gente = approvers.filter((m) => m.approval === state)
+                    if (gente.length === 0) return null
+                    const badge = APPROVAL_BADGE[state]
+                    return (
+                      <p key={state} className="flex items-start gap-1.5 text-[11px] font-body leading-relaxed">
+                        <span className={cn('px-1.5 py-0.5 rounded-md border font-bold whitespace-nowrap shrink-0', badge.color)}>
+                          {badge.label}
+                        </span>
+                        <span className="text-white/70 pt-0.5">
+                          {gente.map((m) => m.mentionedUser.name).join(', ')}
+                        </span>
+                      </p>
+                    )
+                  })}
+                </div>
                 <ul className="space-y-2">
                   {approvers.map((m) => {
                     const isMine = user?.id === m.mentionedUser.id
