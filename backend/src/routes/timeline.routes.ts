@@ -111,13 +111,31 @@ export async function timelineRoutes(app: FastifyInstance) {
 
     // Só quem participa da timeline do projeto pode ser marcado — marcar alguém
     // que não consegue abrir a página seria mandá-lo para uma porta fechada.
-    const members = await prisma.timelineMember.findMany({
-      where:   { boardId, user: { isActive: true } },
-      select:  { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
-      orderBy: { user: { name: 'asc' } },
+    //
+    // Participar tem três origens, as mesmas de `isTimelineMember`: estar em
+    // timeline_members, ser membro da missão, ou ser o dono dela. Listar só a
+    // primeira devolvia lista VAZIA em missão existente, onde ninguém tem essa
+    // linha — e aí não havia quem marcar.
+    const board = await prisma.board.findUnique({
+      where:  { id: boardId },
+      select: { ownerId: true },
+    })
+    if (!board) throw new AppError('Projeto não encontrado', 404)
+
+    const people = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { timelineMemberships: { some: { boardId } } },
+          { boardMemberships:    { some: { boardId } } },
+          { id: board.ownerId },
+        ],
+      },
+      select:  { id: true, name: true, email: true, avatarUrl: true },
+      orderBy: { name: 'asc' },
     })
 
-    return reply.send({ people: members.map((m) => m.user) })
+    return reply.send({ people })
   })
 
   // ── GET /timeline/documents/:id ──────────────────────────
