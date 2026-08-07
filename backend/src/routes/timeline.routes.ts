@@ -133,7 +133,8 @@ export async function timelineRoutes(app: FastifyInstance) {
   // ── POST /timeline/documents ─────────────────────────────
   app.post('/timeline/documents', { preHandler: [authenticate] }, async (request, reply) => {
     const body = request.body as {
-      boardId?: string; name?: string; description?: string; date?: string; mentionedUserIds?: string[]
+      boardId?: string; name?: string; description?: string; date?: string
+      approverIds?: string[]; mentionIds?: string[]
     }
     if (!body.boardId) throw new AppError('Informe o projeto.', 400)
     if (!body.name)    throw new AppError('Informe o nome do documento.', 400)
@@ -142,12 +143,13 @@ export async function timelineRoutes(app: FastifyInstance) {
     await assertTimelineMember(body.boardId, request.user)
 
     const document = await createDocument({
-      boardId:          body.boardId,
-      name:             body.name,
-      description:      body.description,
-      date:             body.date,
-      mentionedUserIds: Array.isArray(body.mentionedUserIds) ? body.mentionedUserIds : [],
-      author:           { id: request.user.id, name: request.user.name },
+      boardId:     body.boardId,
+      name:        body.name,
+      description: body.description,
+      date:        body.date,
+      approverIds: Array.isArray(body.approverIds) ? body.approverIds : [],
+      mentionIds:  Array.isArray(body.mentionIds)  ? body.mentionIds  : [],
+      author:      { id: request.user.id, name: request.user.name },
     })
 
     return reply.status(201).send({ document })

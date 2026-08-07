@@ -52,6 +52,10 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
   const canEdit   = isAdmin || isAuthor
   const canDelete = isAdmin
 
+  // Dois papéis distintos: quem assina e quem só foi avisado.
+  const approvers = doc.mentions.filter((m) => m.isApprover)
+  const cited     = doc.mentions.filter((m) => !m.isApprover)
+
   const prettyDate = new Date(`${doc.date.slice(0, 10)}T12:00:00`)
     .toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
 
@@ -326,21 +330,45 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
               </button>
             </section>
 
+            {/* Citados: só ciência, sem botão nenhum */}
+            {cited.length > 0 && (
+              <section>
+                <h3 className="text-[11px] font-display font-black tracking-widest text-white/40 uppercase mb-2">
+                  Citados
+                </h3>
+                <ul className="flex flex-wrap gap-1.5">
+                  {cited.map((m) => (
+                    <li key={m.id}
+                      className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border border-cyan-500/25 bg-cyan-500/8">
+                      <Avatar name={m.mentionedUser.name} src={m.mentionedUser.avatarUrl} size="xs" />
+                      <span className="text-xs font-body text-cyan-200">
+                        {m.mentionedUser.name}
+                        {user?.id === m.mentionedUser.id && <span className="text-cyan-300/50"> (você)</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[10px] font-body text-white/30 mt-1.5">
+                  Foram avisados para tomar ciência. Não precisam aprovar nada.
+                </p>
+              </section>
+            )}
+
             {/* Aprovações */}
-            {doc.mentions.length > 0 && (
+            {approvers.length > 0 && (
               <section>
                 <h3 className="text-[11px] font-display font-black tracking-widest text-white/40 uppercase mb-2">
                   Aprovações
                   <span className="ml-1.5 text-white/25 font-body font-normal normal-case tracking-normal">
-                    · {doc.mentions.filter((m) => m.approval !== 'PENDING').length} de {doc.mentions.length} decidiram
+                    · {approvers.filter((m) => m.approval !== 'PENDING').length} de {approvers.length} decidiram
                   </span>
                 </h3>
                 <ul className="space-y-2">
-                  {doc.mentions.map((m) => {
-                    const isMine   = user?.id === m.mentionedUser.id
-                    // Quem já decidiu pode mudar de ideia; o admin decide por
-                    // quem saiu da empresa e deixou a aprovação pendente.
-                    const canDecide = isMine || user?.role === 'ADMIN'
+                  {approvers.map((m) => {
+                    const isMine = user?.id === m.mentionedUser.id
+                    // Aprovação é assinatura: só a própria pessoa assina.
+                    // Nem o admin decide no lugar dela.
+                    const canDecide = isMine
                     const badge = APPROVAL_BADGE[m.approval]
 
                     return (

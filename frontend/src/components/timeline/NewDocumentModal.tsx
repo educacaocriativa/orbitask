@@ -3,8 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import { Avatar } from '@/components/ui/Avatar'
-import { cn } from '@/lib/utils'
+import { PersonPicker } from './PersonPicker'
 import type { TimelinePerson, TimelineDocument } from '@/types/timeline'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024
@@ -21,8 +20,7 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
   const [name, setName]               = useState('')
   const [description, setDescription] = useState('')
   const [mentioned, setMentioned]     = useState<TimelinePerson[]>([])
-  const [personQuery, setPersonQuery] = useState('')
-  const [showPeople, setShowPeople]   = useState(false)
+  const [approvers, setApprovers]     = useState<TimelinePerson[]>([])
   const [files, setFiles]             = useState<File[]>([])
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [saving, setSaving]           = useState(false)
@@ -32,22 +30,13 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
 
   useEffect(() => {
     if (date) {
-      setName(''); setDescription(''); setMentioned([])
-      setPersonQuery(''); setShowPeople(false); setFiles([]); setUploadProgress(null)
+      setName(''); setDescription(''); setMentioned([]); setApprovers([])
+      setFiles([]); setUploadProgress(null)
       // Foca o primeiro campo assim que abre — quem clicou numa data já sabe
       // o que quer escrever.
       setTimeout(() => nameInputRef.current?.focus(), 80)
     }
   }, [date])
-
-  const available = useMemo(() => {
-    const chosen = new Set(mentioned.map((p) => p.id))
-    const query  = personQuery.trim().toLowerCase()
-    return people
-      .filter((p) => !chosen.has(p.id))
-      .filter((p) => !query || p.name.toLowerCase().includes(query) || p.email?.toLowerCase().includes(query))
-      .slice(0, 6)
-  }, [people, mentioned, personQuery])
 
   const prettyDate = date
     ? new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -79,7 +68,8 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
         name:             name.trim(),
         description:      description.trim() || undefined,
         date,
-        mentionedUserIds: mentioned.map((p) => p.id),
+        approverIds:      approvers.map((p) => p.id),
+        mentionIds:       mentioned.map((p) => p.id),
       })
 
       let document: TimelineDocument = data.document
@@ -158,61 +148,29 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
                 />
               </label>
 
-              {/* Pedir aprovação de */}
-              <div className="relative">
-                <span className="text-[11px] font-display font-black tracking-widest text-white/40 uppercase">
-                  Pedir aprovação de
-                </span>
+              {/* Citar: só chama a atenção */}
+              <PersonPicker
+                label="Citar pessoas"
+                placeholder="@ digite um nome"
+                hint="Recebem um aviso no WhatsApp para tomar ciência. Nada é cobrado delas."
+                people={people}
+                selected={mentioned}
+                onChange={setMentioned}
+                excludeIds={approvers.map((p) => p.id)}
+                tone="cyan"
+              />
 
-                {mentioned.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {mentioned.map((p) => (
-                      <span key={p.id}
-                        className="flex items-center gap-1.5 pl-1 pr-2 py-1 rounded-lg border border-violet-500/30 bg-violet-500/10">
-                        <Avatar name={p.name} src={p.avatarUrl} size="xs" />
-                        <span className="text-xs font-body text-violet-200">{p.name}</span>
-                        <button type="button"
-                          onClick={() => setMentioned((prev) => prev.filter((x) => x.id !== p.id))}
-                          className="text-violet-300/60 hover:text-violet-200 text-xs leading-none"
-                          aria-label={`Remover ${p.name}`}>
-                          ✕
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <input
-                  value={personQuery}
-                  onChange={(e) => { setPersonQuery(e.target.value); setShowPeople(true) }}
-                  onFocus={() => setShowPeople(true)}
-                  onBlur={() => setTimeout(() => setShowPeople(false), 140)}
-                  placeholder="@ digite um nome"
-                  className="mt-1.5 w-full px-3 py-2.5 rounded-xl text-sm font-body input-space"
-                />
-
-                {showPeople && available.length > 0 && (
-                  <ul className="absolute left-0 right-0 top-full mt-1 z-20 glass-strong rounded-xl border border-white/14 p-1 max-h-52 overflow-y-auto scrollbar-space">
-                    {available.map((p) => (
-                      <li key={p.id}>
-                        <button type="button"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => { setMentioned((prev) => [...prev, p]); setPersonQuery('') }}
-                          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-white/6 transition-colors text-left">
-                          <Avatar name={p.name} src={p.avatarUrl} size="xs" />
-                          <span className="min-w-0">
-                            <span className="block text-sm font-body text-white/85 truncate">{p.name}</span>
-                            <span className="block text-[10px] font-body text-white/35 truncate">{p.email}</span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <p className="text-[10px] font-body text-white/30 mt-1">
-                  Quem for marcado recebe um aviso no WhatsApp e aprova ou reprova aqui. A decisão fica registrada, mas não bloqueia nada.
-                </p>
-              </div>
+              {/* Pedir aprovação: assina */}
+              <PersonPicker
+                label="Pedir aprovação de"
+                placeholder="@ digite um nome"
+                hint="Recebem um pedido de aprovação e assinam aqui, aprovando ou reprovando. A decisão fica registrada, mas não bloqueia nada."
+                people={people}
+                selected={approvers}
+                onChange={setApprovers}
+                excludeIds={mentioned.map((p) => p.id)}
+                tone="violet"
+              />
 
               {/* Descrição */}
               <label className="block">

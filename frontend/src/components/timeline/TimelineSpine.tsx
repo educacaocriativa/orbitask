@@ -147,24 +147,26 @@ function DayRow({
                           </span>
                         )}
                         {doc.mentions.length > 0 && (
-                          <>
-                            <span className="flex -space-x-1.5">
-                              {doc.mentions.slice(0, 3).map((m) => (
-                                <Avatar key={m.id} name={m.mentionedUser.name} src={m.mentionedUser.avatarUrl} size="xs" />
-                              ))}
-                            </span>
-                            {/* Responde "o que está comigo?" sem abrir cada documento. */}
-                            {doc.mentions.some((m) => m.mentionedUser.id === currentUserId && m.approval === 'PENDING') ? (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/12 text-amber-300 font-body font-bold">
-                                aguarda você
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-body text-white/35">
-                                {doc.mentions.filter((m) => m.approval !== 'PENDING').length}/{doc.mentions.length} decidiram
-                              </span>
-                            )}
-                          </>
+                          <span className="flex -space-x-1.5">
+                            {doc.mentions.slice(0, 3).map((m) => (
+                              <Avatar key={m.id} name={m.mentionedUser.name} src={m.mentionedUser.avatarUrl} size="xs" />
+                            ))}
+                          </span>
                         )}
+                        {/* Só quem assina conta aqui — citado não deve nada. */}
+                        {(() => {
+                          const approvers = doc.mentions.filter((m) => m.isApprover)
+                          if (approvers.length === 0) return null
+                          return approvers.some((m) => m.mentionedUser.id === currentUserId && m.approval === 'PENDING') ? (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/12 text-amber-300 font-body font-bold">
+                              aguarda você
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-body text-white/35">
+                              {approvers.filter((m) => m.approval !== 'PENDING').length}/{approvers.length} decidiram
+                            </span>
+                          )
+                        })()}
                       </span>
                     </span>
                   </button>

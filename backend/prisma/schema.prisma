@@ -707,6 +707,13 @@ model TimelineMention {
   whatsappSent   Boolean   @default(false) @map("whatsapp_sent")
   whatsappSentAt DateTime? @map("whatsapp_sent_at")
 
+  /// Distingue os dois motivos de marcar alguém:
+  ///   false -> citação: só chama a atenção, não pede nada
+  ///   true  -> aprovação: a pessoa assina (aprova ou reprova)
+  /// A mesma pessoa pode estar nos dois papéis em documentos diferentes.
+  isApprover Boolean @default(true) @map("is_approver")
+
+  /// Só faz sentido quando isApprover = true.
   approval  TimelineApproval @default(PENDING)
   decidedAt DateTime?        @map("decided_at")
 

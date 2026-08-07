@@ -240,6 +240,32 @@ export class WhatsAppService {
     return this.sendMessage({ phone: params.recipientPhone, message })
   }
 
+  /** Citação num documento da Timeline: só dá ciência, não pede nada. */
+  async notifyTimelineMention(params: {
+    recipientPhone: string
+    recipientName: string
+    mentionedBy: string
+    documentName: string
+    documentDate: string
+    projectTitle: string
+  }) {
+    const message = [
+      `🗓 *Orbitask — Você foi citado*`,
+      ``,
+      `Olá, ${params.recipientName}!`,
+      ``,
+      `*${params.mentionedBy}* citou você em um documento.`,
+      ``,
+      `📁 *Projeto:* ${params.projectTitle}`,
+      `📄 *Documento:* ${params.documentName}`,
+      `📅 *Data:* ${params.documentDate}`,
+      ``,
+      `É só para você ficar sabendo — não precisa aprovar nada.`,
+    ].join('\n')
+
+    return this.sendMessage({ phone: params.recipientPhone, message })
+  }
+
   async notifyDeadlineExpired(params: {
     recipientPhone: string
     recipientName: string
@@ -358,14 +384,24 @@ export class WhatsAppService {
       // FAILED e ninguém recebia nada. Vale para menção de card também.
       case NotificationType.MENTION:
         if (payload.source === 'timeline') {
-          success = await this.notifyTimelineApproval({
+          const timelineParams = {
             recipientPhone: notification.recipient.phoneWhatsapp,
             recipientName:  notification.recipient.name,
-            requestedBy:    (payload.mentionedByName as string) ?? 'Alguém',
             documentName:   (payload.documentName as string) ?? '',
             documentDate:   formatBrDate(payload.documentDate as string),
             projectTitle:   (payload.projectTitle as string) ?? '',
-          })
+          }
+          // `kind` ausente = payload antigo, de quando marcar significava
+          // sempre pedir aprovação.
+          success = payload.kind === 'mention'
+            ? await this.notifyTimelineMention({
+                ...timelineParams,
+                mentionedBy: (payload.mentionedByName as string) ?? 'Alguém',
+              })
+            : await this.notifyTimelineApproval({
+                ...timelineParams,
+                requestedBy: (payload.mentionedByName as string) ?? 'Alguém',
+              })
         } else {
           success = await this.notifyMention({
             recipientPhone: notification.recipient.phoneWhatsapp,

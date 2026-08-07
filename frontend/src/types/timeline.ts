@@ -19,6 +19,8 @@ export type TimelineApproval = 'PENDING' | 'APPROVED' | 'REJECTED'
 
 export interface TimelineMention {
   id: string
+  /** true = assina (aprova/reprova); false = só foi citado, para ciência. */
+  isApprover: boolean
   /** Decisão de quem foi marcado. É registro visual: não bloqueia nada. */
   approval: TimelineApproval
   decidedAt: string | null

@@ -213,7 +213,10 @@ export interface CreateDocumentInput {
   name:        string
   description?: string
   date:        string
-  mentionedUserIds: string[]
+  /** Quem assina o documento (aprova ou reprova). */
+  approverIds: string[]
+  /** Quem é só citado, para tomar ciência. */
+  mentionIds:  string[]
   author: { id: string; name: string }
 }
 
@@ -260,15 +263,16 @@ export async function createDocument(input: CreateDocumentInput) {
     })
   }
 
-  if (input.mentionedUserIds.length > 0) {
+  if (input.approverIds.length > 0 || input.mentionIds.length > 0) {
     await processTimelineMentions({
-      documentId:       document.id,
-      documentName:     name,
-      documentDate:     date,
-      projectTitle:     board.title,
-      mentionedUserIds: input.mentionedUserIds,
-      mentionedById:    input.author.id,
-      mentionedByName:  input.author.name,
+      documentId:      document.id,
+      documentName:    name,
+      documentDate:    date,
+      projectTitle:    board.title,
+      approverIds:     input.approverIds,
+      mentionIds:      input.mentionIds,
+      mentionedById:   input.author.id,
+      mentionedByName: input.author.name,
     })
   }
 
@@ -300,30 +304,46 @@ async function ensureDocumentFolder(date: Date, name: string, boardTitle: string
 
 // ── Menções ────────────────────────────────────────────────────────────────
 
+/**
+ * Marca pessoas no documento, em dois papéis distintos:
+ *
+ *   citados     — só chamam a atenção; recebem aviso e nada é cobrado
+ *   aprovadores — assinam; recebem pedido de aprovação e decidem
+ *
+ * Quem estiver nas duas listas conta como aprovador: é o papel mais forte, e
+ * pedir aprovação já chama a atenção de qualquer forma.
+ */
 async function processTimelineMentions(params: {
-  documentId:       string
-  documentName:     string
-  documentDate:     Date
-  projectTitle:     string
-  mentionedUserIds: string[]
-  mentionedById:    string
-  mentionedByName:  string
+  documentId:      string
+  documentName:    string
+  documentDate:    Date
+  projectTitle:    string
+  approverIds:     string[]
+  mentionIds:      string[]
+  mentionedById:   string
+  mentionedByName: string
 }) {
+  const approvers = new Set(params.approverIds)
+  const everyone  = [...new Set([...params.approverIds, ...params.mentionIds])]
+
   const users = await prisma.user.findMany({
-    where:  { id: { in: params.mentionedUserIds }, isActive: true },
+    where:  { id: { in: everyone }, isActive: true },
     select: { id: true, name: true, phoneWhatsapp: true },
   })
 
   for (const user of users) {
+    const isApprover = approvers.has(user.id)
+
     // A unique (documentId, mentionedUserId) evita marcar a mesma pessoa duas
     // vezes; skipDuplicates não existe em create, então tratamos aqui.
     const mention = await prisma.timelineMention.upsert({
       where:  { documentId_mentionedUserId: { documentId: params.documentId, mentionedUserId: user.id } },
-      update: {},
+      update: { isApprover },
       create: {
         documentId:      params.documentId,
         mentionedUserId: user.id,
         mentionedById:   params.mentionedById,
+        isApprover,
       },
     })
 
@@ -335,6 +355,9 @@ async function processTimelineMentions(params: {
           scheduledFor: new Date(),
           payload: JSON.parse(JSON.stringify({
             source:          'timeline',
+            // Decide qual texto o WhatsApp envia: pedido de aprovação ou
+            // apenas aviso de citação.
+            kind:            isApprover ? 'approval' : 'mention',
             mentionId:       mention.id,
             mentionedByName: params.mentionedByName,
             documentName:    params.documentName,
@@ -377,10 +400,15 @@ export async function decideApproval(
   const mention = await prisma.timelineMention.findUnique({ where: { id: mentionId } })
   if (!mention) throw new AppError('Marcação não encontrada', 404)
 
-  // Só quem foi marcado decide — ou o admin, para destravar quando a pessoa
-  // saiu da empresa e a aprovação ficou pendente.
-  if (mention.mentionedUserId !== user.id && user.role !== 'ADMIN') {
-    throw new AppError('Só quem foi marcado pode aprovar ou reprovar.', 403)
+  // Aprovação é assinatura: só a própria pessoa assina. Nem o admin decide no
+  // lugar dela — seria uma assinatura falsa, e o registro perderia o sentido.
+  if (mention.mentionedUserId !== user.id) {
+    throw new AppError('Só quem recebeu o pedido pode aprovar ou reprovar.', 403)
+  }
+
+  // Quem foi apenas citado não assina nada.
+  if (!mention.isApprover) {
+    throw new AppError('Esta pessoa foi citada no documento, não teve aprovação solicitada.', 400)
   }
 
   const now = new Date()
