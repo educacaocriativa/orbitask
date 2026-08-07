@@ -496,12 +496,22 @@ export async function attachFile(params: {
  */
 export async function updateDocument(
   id: string,
-  input: { name?: string; description?: string | null; boardId?: string },
+  input: {
+    name?: string
+    description?: string | null
+    boardId?: string
+    /** Listas COMPLETAS de quem deve assinar / ser citado depois da edição. */
+    approverIds?: string[]
+    mentionIds?: string[]
+  },
   user: { id: string; role: string },
 ) {
   const document = await prisma.timelineDocument.findUnique({
     where:  { id },
-    select: { id: true, name: true, date: true, createdById: true, driveFolderId: true, boardId: true },
+    select: {
+      id: true, name: true, date: true, createdById: true, driveFolderId: true, boardId: true,
+      board: { select: { title: true } },
+    },
   })
   if (!document) throw new AppError('Documento não encontrado', 404)
 

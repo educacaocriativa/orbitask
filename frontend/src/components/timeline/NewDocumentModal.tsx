@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
+import { useEscapeToClose } from './useEscapeToClose'
 import { PersonPicker } from './PersonPicker'
 import type { TimelinePerson, TimelineDocument } from '@/types/timeline'
 
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: Props) {
+  useEscapeToClose(!!date, onClose)
   const [name, setName]               = useState('')
   const [description, setDescription] = useState('')
   const [mentioned, setMentioned]     = useState<TimelinePerson[]>([])
@@ -114,14 +116,12 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           className="fixed inset-0 z-[200] flex items-center justify-center p-4"
           style={{ background: 'rgba(4,2,15,0.72)', backdropFilter: 'blur(6px)' }}
-          onClick={onClose}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: 0.18 }}
-            onClick={(e) => e.stopPropagation()}
             className="w-full max-w-lg glass-strong rounded-2xl border border-white/16 overflow-hidden max-h-[90vh] flex flex-col"
           >
             {/* Cabeçalho */}

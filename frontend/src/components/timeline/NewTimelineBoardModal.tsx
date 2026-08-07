@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
+import { useEscapeToClose } from './useEscapeToClose'
 import { cn } from '@/lib/utils'
 
 const COLORS = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899']
@@ -18,6 +19,7 @@ interface Props {
  * ativas nem ganha quadro Kanban.
  */
 export function NewTimelineBoardModal({ open, onClose, onCreated }: Props) {
+  useEscapeToClose(open, onClose)
   const [title, setTitle]             = useState('')
   const [description, setDescription] = useState('')
   const [color, setColor]             = useState(COLORS[0])
@@ -64,14 +66,12 @@ export function NewTimelineBoardModal({ open, onClose, onCreated }: Props) {
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           className="fixed inset-0 z-[200] flex items-center justify-center p-4"
           style={{ background: 'rgba(4,2,15,0.72)', backdropFilter: 'blur(6px)' }}
-          onClick={onClose}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: 0.18 }}
-            onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md glass-strong rounded-2xl border border-white/16 overflow-hidden"
           >
             <div className="px-5 py-4 border-b border-white/8">
