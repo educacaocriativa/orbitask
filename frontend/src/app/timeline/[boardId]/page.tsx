@@ -33,19 +33,29 @@ export default function TimelineBoardPage() {
   const [openDocument, setOpenDocument] = useState<TimelineDocument | null>(null)
   const [showAccess, setShowAccess]     = useState(false)
 
-  const loadMonth = useCallback(async (y: number, m: number) => {
-    setLoading(true)
+  /** `silent` recarrega sem piscar a tela de carregamento. */
+  const loadMonth = useCallback(async (y: number, m: number, silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const { data } = await api.get<TimelineMonthData>('/timeline', {
         params: { boardId, year: y, month: m },
       })
       setData(data)
       setDenied(false)
+
+      // Se há um documento aberto, ele também precisa da versão nova.
+      setOpenDocument((atual) => {
+        if (!atual) return atual
+        const atualizado = data.days
+          .flatMap((d) => d.documents)
+          .find((d) => d.id === atual.id)
+        return atualizado ?? atual
+      })
     } catch (err: any) {
       if (err?.response?.status === 403) setDenied(true)
-      else toast.error('Não foi possível carregar a linha do tempo')
+      else if (!silent) toast.error('Não foi possível carregar a linha do tempo')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [boardId])
 
@@ -67,6 +77,25 @@ export default function TimelineBoardPage() {
   useEffect(() => { loadMonth(year, month) }, [year, month, loadMonth])
   useEffect(() => { loadPeople(); loadBoard() }, [loadPeople, loadBoard])
 
+  /**
+   * Recarrega o mês quando a aba volta a ficar visível.
+   *
+   * Aprovação é feita por outra pessoa, em outro computador: sem isto, quem
+   * deixou a Timeline aberta continuaria vendo "aguardando" para sempre. O
+   * `silent` evita piscar a tela de carregamento a cada troca de aba.
+   */
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') loadMonth(year, month, true)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [year, month, loadMonth])
+
   function shiftMonth(delta: number) {
     const next = new Date(year, month - 1 + delta, 1)
     setYear(next.getFullYear())
@@ -80,6 +109,24 @@ export default function TimelineBoardPage() {
   }
 
   const isCurrentMonth = year === today.getFullYear() && month === today.getMonth() + 1
+
+  /**
+   * Abre o documento buscando a versão atual do servidor.
+   *
+   * O objeto que veio no carregamento do mês é um retrato daquele instante: se
+   * alguém aprovou depois, ele ainda diz "aguardando". Mostra o que já se tem
+   * na hora (para o modal abrir imediato) e corrige assim que a resposta chega.
+   */
+  async function openDocumentFresh(document: TimelineDocument) {
+    setOpenDocument(document)
+    try {
+      const { data } = await api.get(`/timeline/documents/${document.id}`)
+      applyDocument(data.document)
+    } catch {
+      // Sem rede, o retrato antigo é melhor que nada — o usuário ainda
+      // consegue ler o documento e abrir a pasta no Drive.
+    }
+  }
 
   /** Recoloca o documento alterado no dia certo, sem recarregar o mês inteiro. */
   function applyDocument(document: TimelineDocument) {
@@ -184,6 +231,11 @@ export default function TimelineBoardPage() {
                   className="px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/6 transition-all text-sm">
                   ←
                 </button>
+                <button onClick={() => loadMonth(year, month)} aria-label="Atualizar"
+                  title="Buscar as decisões mais recentes"
+                  className="px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/6 transition-all text-sm">
+                  ↻
+                </button>
                 <button onClick={goToToday} disabled={isCurrentMonth}
                   className="px-2.5 py-1.5 rounded-lg text-xs font-body font-bold text-white/60 hover:text-white hover:bg-white/6 disabled:opacity-30 transition-all">
                   hoje
@@ -206,7 +258,7 @@ export default function TimelineBoardPage() {
           <TimelineSpine
             days={data.days}
             onAddDocument={setAddingOnDate}
-            onOpenDocument={setOpenDocument}
+            onOpenDocument={openDocumentFresh}
           />
         ) : null}
       </main>
