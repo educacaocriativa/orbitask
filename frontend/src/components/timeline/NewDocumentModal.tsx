@@ -23,7 +23,8 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
   const [mentioned, setMentioned]     = useState<TimelinePerson[]>([])
   const [personQuery, setPersonQuery] = useState('')
   const [showPeople, setShowPeople]   = useState(false)
-  const [file, setFile]               = useState<File | null>(null)
+  const [files, setFiles]             = useState<File[]>([])
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [saving, setSaving]           = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -32,7 +33,7 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
   useEffect(() => {
     if (date) {
       setName(''); setDescription(''); setMentioned([])
-      setPersonQuery(''); setShowPeople(false); setFile(null)
+      setPersonQuery(''); setShowPeople(false); setFiles([]); setUploadProgress(null)
       // Foca o primeiro campo assim que abre — quem clicou numa data já sabe
       // o que quer escrever.
       setTimeout(() => nameInputRef.current?.focus(), 80)
@@ -52,12 +53,13 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
     ? new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })
     : ''
 
-  function pickFile(selected: File | null) {
-    if (selected && selected.size > MAX_FILE_BYTES) {
-      toast.error('Arquivo muito grande. O limite é 50 MB.')
-      return
+  function pickFiles(selected: File[]) {
+    const tooBig = selected.filter((f) => f.size > MAX_FILE_BYTES)
+    if (tooBig.length > 0) {
+      toast.error(`${tooBig.map((f) => f.name).join(', ')}: acima de 50 MB`)
     }
-    setFile(selected)
+    // Acumula em vez de substituir: dá para escolher em várias levas.
+    setFiles((prev) => [...prev, ...selected.filter((f) => f.size <= MAX_FILE_BYTES)])
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -82,20 +84,27 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
 
       let document: TimelineDocument = data.document
 
-      // O documento já existe neste ponto. Se o upload falhar, o registro fica
-      // de pé e a pessoa anexa o arquivo depois pela tela de detalhe — melhor
-      // que perder tudo que ela acabou de escrever.
-      if (file) {
+      // O documento já existe neste ponto. Se um upload falhar, o registro e os
+      // arquivos que subiram ficam de pé, e a pessoa anexa o resto depois pela
+      // tela de detalhe — melhor que perder tudo que ela acabou de escrever.
+      const failed: string[] = []
+      for (let i = 0; i < files.length; i++) {
+        setUploadProgress({ done: i, total: files.length })
         try {
           const form = new FormData()
-          form.append('file', file)
+          form.append('file', files[i])
           const upload = await api.post(`/timeline/documents/${document.id}/files`, form, {
             headers: { 'Content-Type': 'multipart/form-data' },
           })
           document = { ...document, files: [...document.files, upload.data.file] }
-        } catch (err: any) {
-          toast.error(err?.response?.data?.message ?? 'Documento criado, mas o arquivo não subiu. Anexe pelo documento.')
+        } catch {
+          failed.push(files[i].name)
         }
+      }
+      setUploadProgress(null)
+
+      if (failed.length > 0) {
+        toast.error(`Documento criado, mas não subiu: ${failed.join(', ')}. Anexe pelo documento.`)
       }
 
       onCreated(document)
@@ -149,10 +158,10 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
                 />
               </label>
 
-              {/* Marcar pessoas */}
+              {/* Pedir aprovação de */}
               <div className="relative">
                 <span className="text-[11px] font-display font-black tracking-widest text-white/40 uppercase">
-                  Marcar pessoas
+                  Pedir aprovação de
                 </span>
 
                 {mentioned.length > 0 && (
@@ -201,7 +210,7 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
                   </ul>
                 )}
                 <p className="text-[10px] font-body text-white/30 mt-1">
-                  Quem for marcado recebe um aviso no WhatsApp e pode responder aqui.
+                  Quem for marcado recebe um aviso no WhatsApp e aprova ou reprova aqui. A decisão fica registrada, mas não bloqueia nada.
                 </p>
               </div>
 
@@ -219,34 +228,50 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
                 />
               </label>
 
-              {/* Arquivo */}
+              {/* Arquivos */}
               <div>
                 <span className="text-[11px] font-display font-black tracking-widest text-white/40 uppercase">
-                  Arquivo
-                </span>
-                <input ref={fileInputRef} type="file" className="hidden"
-                  onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
-
-                {file ? (
-                  <div className="mt-1.5 flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-teal-500/25 bg-teal-500/8">
-                    <span className="text-base">📎</span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-body text-white/85 truncate">{file.name}</span>
-                      <span className="block text-[10px] font-body text-white/40">{formatBytes(file.size)}</span>
+                  Arquivos
+                  {files.length > 0 && (
+                    <span className="ml-1.5 text-white/25 font-body font-normal normal-case tracking-normal">
+                      · {files.length} selecionado{files.length > 1 ? 's' : ''}
                     </span>
-                    <button type="button" onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }}
-                      className="text-xs text-white/45 hover:text-white/85 transition-colors">
-                      remover
-                    </button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => fileInputRef.current?.click()}
-                    className="mt-1.5 w-full px-3 py-3 rounded-xl border border-dashed border-white/16 text-sm font-body text-white/45 hover:border-white/30 hover:text-white/70 transition-all">
-                    Escolher arquivo (até 50 MB)
-                  </button>
+                  )}
+                </span>
+                <input ref={fileInputRef} type="file" multiple className="hidden"
+                  onChange={(e) => {
+                    pickFiles(Array.from(e.target.files ?? []))
+                    // Limpa para permitir escolher o mesmo arquivo de novo.
+                    if (fileInputRef.current) fileInputRef.current.value = ''
+                  }} />
+
+                {files.length > 0 && (
+                  <ul className="mt-1.5 space-y-1.5">
+                    {files.map((f, i) => (
+                      <li key={`${f.name}-${i}`}
+                        className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-teal-500/25 bg-teal-500/8">
+                        <span className="text-sm">📎</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-body text-white/85 truncate">{f.name}</span>
+                          <span className="block text-[10px] font-body text-white/40">{formatBytes(f.size)}</span>
+                        </span>
+                        <button type="button"
+                          onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                          aria-label={`Remover ${f.name}`}
+                          className="shrink-0 text-xs text-white/45 hover:text-white/85 transition-colors">
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 )}
+
+                <button type="button" onClick={() => fileInputRef.current?.click()}
+                  className="mt-1.5 w-full px-3 py-3 rounded-xl border border-dashed border-white/16 text-sm font-body text-white/45 hover:border-white/30 hover:text-white/70 transition-all">
+                  {files.length > 0 ? '+ Escolher mais arquivos' : 'Escolher arquivos (até 50 MB cada)'}
+                </button>
                 <p className="text-[10px] font-body text-white/30 mt-1">
-                  O arquivo vai para a pasta do documento no Google Drive. Dá para anexar depois também.
+                  Os arquivos vão para a pasta do documento no Google Drive. Dá para anexar mais depois.
                 </p>
               </div>
             </form>
@@ -260,7 +285,11 @@ export function NewDocumentModal({ boardId, date, people, onClose, onCreated }: 
               <motion.button onClick={handleSubmit} disabled={saving}
                 whileHover={{ scale: saving ? 1 : 1.03 }} whileTap={{ scale: 0.97 }}
                 className="px-4 py-2 rounded-xl border border-neon-violet/55 bg-neon-violet/25 text-white text-sm font-display font-black tracking-wide hover:bg-neon-violet/35 disabled:opacity-40 transition-all">
-                {saving ? 'Criando...' : 'Criar documento'}
+                {saving
+                  ? uploadProgress
+                    ? `Enviando ${uploadProgress.done + 1} de ${uploadProgress.total}...`
+                    : 'Criando...'
+                  : 'Criar documento'}
               </motion.button>
             </div>
           </motion.div>

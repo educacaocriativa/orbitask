@@ -1,6 +1,7 @@
 'use client'
 import { motion } from 'framer-motion'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/authStore'
 import { Avatar } from '@/components/ui/Avatar'
 import type { TimelineDay, TimelineDocument } from '@/types/timeline'
 
@@ -21,6 +22,8 @@ interface Props {
  * o que interessa.
  */
 export function TimelineSpine({ days, onAddDocument, onOpenDocument }: Props) {
+  const currentUserId = useAuthStore((s) => s.user?.id)
+
   return (
     <div className="relative py-4">
       {/* Eixo central + seta */}
@@ -44,6 +47,7 @@ export function TimelineSpine({ days, onAddDocument, onOpenDocument }: Props) {
             side={index % 2 === 0 ? 'left' : 'right'}
             onAddDocument={onAddDocument}
             onOpenDocument={onOpenDocument}
+            currentUserId={currentUserId}
           />
         ))}
       </ol>
@@ -52,12 +56,13 @@ export function TimelineSpine({ days, onAddDocument, onOpenDocument }: Props) {
 }
 
 function DayRow({
-  day, side, onAddDocument, onOpenDocument,
+  day, side, onAddDocument, onOpenDocument, currentUserId,
 }: {
   day: TimelineDay
   side: 'left' | 'right'
   onAddDocument: (date: string) => void
   onOpenDocument: (document: TimelineDocument) => void
+  currentUserId?: string
 }) {
   const dayNumber = Number(day.date.slice(8, 10))
   const weekday   = WEEKDAYS[new Date(`${day.date}T12:00:00`).getDay()]
@@ -135,18 +140,30 @@ function DayRow({
                       <span className="block text-sm font-body font-semibold text-white/85 truncate group-hover:text-white">
                         {doc.name}
                       </span>
-                      <span className={cn('flex items-center gap-1.5 mt-0.5', side === 'left' && 'md:flex-row-reverse')}>
+                      <span className={cn('flex items-center gap-1.5 mt-0.5 flex-wrap', side === 'left' && 'md:flex-row-reverse')}>
                         {doc.files.length > 0 && (
                           <span className="text-[10px] font-body text-white/40">
                             📎 {doc.files.length}
                           </span>
                         )}
                         {doc.mentions.length > 0 && (
-                          <span className="flex -space-x-1.5">
-                            {doc.mentions.slice(0, 3).map((m) => (
-                              <Avatar key={m.id} name={m.mentionedUser.name} src={m.mentionedUser.avatarUrl} size="xs" />
-                            ))}
-                          </span>
+                          <>
+                            <span className="flex -space-x-1.5">
+                              {doc.mentions.slice(0, 3).map((m) => (
+                                <Avatar key={m.id} name={m.mentionedUser.name} src={m.mentionedUser.avatarUrl} size="xs" />
+                              ))}
+                            </span>
+                            {/* Responde "o que está comigo?" sem abrir cada documento. */}
+                            {doc.mentions.some((m) => m.mentionedUser.id === currentUserId && m.approval === 'PENDING') ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/12 text-amber-300 font-body font-bold">
+                                aguarda você
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-body text-white/35">
+                                {doc.mentions.filter((m) => m.approval !== 'PENDING').length}/{doc.mentions.length} decidiram
+                              </span>
+                            )}
+                          </>
                         )}
                       </span>
                     </span>

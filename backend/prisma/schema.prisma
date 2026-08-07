@@ -684,6 +684,14 @@ model TimelineFile {
 // Espelha `Mention`, que está preso a cardSectionId por FK obrigatória.
 // Tabela própria em vez de afrouxar aquela FK: cada modelo mantém a garantia
 // de que toda menção pertence mesmo a alguma coisa.
+/// Decisão de quem foi marcado para aprovar um documento.
+/// É registro visual: não bloqueia nem altera nada no documento.
+enum TimelineApproval {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model TimelineMention {
   id String @id @default(uuid())
 
@@ -699,6 +707,11 @@ model TimelineMention {
   whatsappSent   Boolean   @default(false) @map("whatsapp_sent")
   whatsappSentAt DateTime? @map("whatsapp_sent_at")
 
+  approval  TimelineApproval @default(PENDING)
+  decidedAt DateTime?        @map("decided_at")
+
+  /// Comentário da decisão. Obrigatório ao reprovar, opcional ao aprovar.
+  /// Reaproveita os campos de resposta que já existiam.
   reply       String?   @db.Text
   repliedAt   DateTime? @map("replied_at")
   repliedById String?   @map("replied_by_id")

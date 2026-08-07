@@ -265,6 +265,7 @@ export async function createDocument(input: CreateDocumentInput) {
       documentId:       document.id,
       documentName:     name,
       documentDate:     date,
+      projectTitle:     board.title,
       mentionedUserIds: input.mentionedUserIds,
       mentionedById:    input.author.id,
       mentionedByName:  input.author.name,
@@ -303,6 +304,7 @@ async function processTimelineMentions(params: {
   documentId:       string
   documentName:     string
   documentDate:     Date
+  projectTitle:     string
   mentionedUserIds: string[]
   mentionedById:    string
   mentionedByName:  string
@@ -337,6 +339,7 @@ async function processTimelineMentions(params: {
             mentionedByName: params.mentionedByName,
             documentName:    params.documentName,
             documentDate:    formatDateOnly(params.documentDate),
+            projectTitle:    params.projectTitle,
           })),
         },
       })
@@ -345,26 +348,53 @@ async function processTimelineMentions(params: {
   }
 }
 
-export async function replyToMention(
+/**
+ * Registra a decisão de quem foi marcado para aprovar.
+ *
+ * É apenas registro: aprovar não libera nada e reprovar não bloqueia nada —
+ * o documento continua recebendo arquivo e podendo ser editado. O que muda é
+ * o que a tela mostra ao lado de cada nome.
+ *
+ * Cada pessoa decide por si; não existe estado consolidado do documento.
+ */
+export async function decideApproval(
   mentionId: string,
-  reply: string,
+  input: { approval: 'APPROVED' | 'REJECTED'; comment?: string },
   user: { id: string; role: string },
 ) {
-  const text = reply.trim()
-  if (!text) throw new AppError('Escreva uma resposta.', 400)
+  if (input.approval !== 'APPROVED' && input.approval !== 'REJECTED') {
+    throw new AppError('Decisão inválida. Use APPROVED ou REJECTED.', 400)
+  }
+
+  const comment = input.comment?.trim() || null
+
+  // Reprovar sem dizer por quê não serve a ninguém: quem lançou o documento
+  // fica sem saber o que corrigir.
+  if (input.approval === 'REJECTED' && !comment) {
+    throw new AppError('Explique o motivo ao reprovar.', 400)
+  }
 
   const mention = await prisma.timelineMention.findUnique({ where: { id: mentionId } })
   if (!mention) throw new AppError('Marcação não encontrada', 404)
 
-  // Só quem foi marcado responde — ou o admin, para destravar quando a pessoa
-  // saiu da empresa e a marcação ficou pendente.
+  // Só quem foi marcado decide — ou o admin, para destravar quando a pessoa
+  // saiu da empresa e a aprovação ficou pendente.
   if (mention.mentionedUserId !== user.id && user.role !== 'ADMIN') {
-    throw new AppError('Só quem foi marcado pode responder a esta marcação.', 403)
+    throw new AppError('Só quem foi marcado pode aprovar ou reprovar.', 403)
   }
 
+  const now = new Date()
   await prisma.timelineMention.update({
     where: { id: mentionId },
-    data:  { reply: text, repliedAt: new Date(), repliedById: user.id },
+    // Decidir de novo sobrescreve: mudar de ideia é legítimo e o histórico
+    // não é requisito aqui.
+    data: {
+      approval:    input.approval,
+      decidedAt:   now,
+      reply:       comment,
+      repliedAt:   now,
+      repliedById: user.id,
+    },
   })
 
   return getDocument(mention.documentId)

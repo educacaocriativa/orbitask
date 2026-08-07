@@ -15,8 +15,14 @@ export interface TimelineFile {
   uploadedBy: TimelinePerson
 }
 
+export type TimelineApproval = 'PENDING' | 'APPROVED' | 'REJECTED'
+
 export interface TimelineMention {
   id: string
+  /** Decisão de quem foi marcado. É registro visual: não bloqueia nada. */
+  approval: TimelineApproval
+  decidedAt: string | null
+  /** Comentário da decisão. Obrigatório ao reprovar. */
   reply: string | null
   repliedAt: string | null
   createdAt: string

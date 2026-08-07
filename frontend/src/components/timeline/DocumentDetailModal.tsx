@@ -6,9 +6,20 @@ import api from '@/lib/api'
 import { Avatar } from '@/components/ui/Avatar'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
-import type { TimelineDocument } from '@/types/timeline'
+import type { TimelineDocument, TimelineApproval } from '@/types/timeline'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024
+
+const APPROVAL_BADGE: Record<TimelineApproval, { label: string; verb: string; color: string }> = {
+  PENDING:  { label: '⏳ aguardando', verb: 'solicitado',  color: 'border-amber-500/30 text-amber-300'     },
+  APPROVED: { label: '✓ aprovou',     verb: 'aprovou',     color: 'border-emerald-500/30 text-emerald-300' },
+  REJECTED: { label: '✕ reprovou',    verb: 'reprovou',    color: 'border-red-500/35 text-red-300'         },
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso)
+  return `${d.toLocaleDateString('pt-BR')} às ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+}
 
 interface Props {
   document: TimelineDocument | null
@@ -20,8 +31,10 @@ interface Props {
 export function DocumentDetailModal({ document: doc, onClose, onChanged, onDeleted }: Props) {
   const { user } = useAuthStore()
   const [uploading, setUploading] = useState(false)
-  const [replyFor, setReplyFor]   = useState<string | null>(null)
-  const [replyText, setReplyText] = useState('')
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
+  const [decidingFor, setDecidingFor]         = useState<string | null>(null)
+  const [decisionComment, setDecisionComment] = useState('')
+  const [savingDecision, setSavingDecision]   = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const [editing, setEditing]         = useState(false)
@@ -83,40 +96,81 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
     }
   }
 
-  async function uploadFile(file: File) {
-    if (!doc) return
-    if (file.size > MAX_FILE_BYTES) {
-      toast.error('Arquivo muito grande. O limite é 50 MB.')
+  /**
+   * Envia vários arquivos, um de cada vez — a Drive API não faz lote.
+   *
+   * Falha em um não descarta os outros: os que subiram ficam, e a pessoa é
+   * avisada de quais não foram, em vez de perder tudo.
+   */
+  async function uploadFiles(selected: File[]) {
+    if (!doc || selected.length === 0) return
+
+    const tooBig = selected.filter((f) => f.size > MAX_FILE_BYTES)
+    const toSend = selected.filter((f) => f.size <= MAX_FILE_BYTES)
+    if (tooBig.length > 0) {
+      toast.error(`${tooBig.map((f) => f.name).join(', ')}: acima de 50 MB`)
+    }
+    if (toSend.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
 
     setUploading(true)
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      const { data } = await api.post(`/timeline/documents/${doc.id}/files`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      onChanged({ ...doc, files: [...doc.files, data.file] })
-      toast.success('Arquivo enviado')
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Não foi possível enviar o arquivo')
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
+    const uploaded: TimelineDocument['files'] = []
+    const failed: string[] = []
+
+    for (let i = 0; i < toSend.length; i++) {
+      setUploadProgress({ done: i, total: toSend.length })
+      try {
+        const form = new FormData()
+        form.append('file', toSend[i])
+        const { data } = await api.post(`/timeline/documents/${doc.id}/files`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        uploaded.push(data.file)
+      } catch {
+        failed.push(toSend[i].name)
+      }
     }
+
+    if (uploaded.length > 0) onChanged({ ...doc, files: [...doc.files, ...uploaded] })
+
+    if (failed.length === 0) {
+      toast.success(uploaded.length === 1 ? 'Arquivo enviado' : `${uploaded.length} arquivos enviados`)
+    } else if (uploaded.length === 0) {
+      toast.error('Nenhum arquivo foi enviado. Tente de novo.')
+    } else {
+      toast.error(`${uploaded.length} enviado(s). Falhou: ${failed.join(', ')}`)
+    }
+
+    setUploading(false)
+    setUploadProgress(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function sendReply(mentionId: string) {
-    if (!replyText.trim()) return
+  async function decide(mentionId: string, approval: 'APPROVED' | 'REJECTED') {
+    const comment = decisionComment.trim()
+
+    // Espelha a regra do backend para a pessoa saber antes de enviar.
+    if (approval === 'REJECTED' && !comment) {
+      toast.error('Explique o motivo ao reprovar')
+      return
+    }
+
+    setSavingDecision(true)
     try {
-      const { data } = await api.patch(`/timeline/mentions/${mentionId}/reply`, { reply: replyText.trim() })
+      const { data } = await api.patch(`/timeline/mentions/${mentionId}/approval`, {
+        approval,
+        comment: comment || undefined,
+      })
       onChanged(data.document)
-      setReplyFor(null)
-      setReplyText('')
-      toast.success('Resposta enviada')
+      setDecidingFor(null)
+      setDecisionComment('')
+      toast.success(approval === 'APPROVED' ? 'Documento aprovado' : 'Documento reprovado')
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Não foi possível responder')
+      toast.error(err?.response?.data?.message ?? 'Não foi possível registrar a decisão')
+    } finally {
+      setSavingDecision(false)
     }
   }
 
@@ -260,24 +314,34 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
                 <p className="text-xs font-body text-white/35 mb-2">Nenhum arquivo ainda.</p>
               )}
 
-              <input ref={fileInputRef} type="file" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f) }} />
+              <input ref={fileInputRef} type="file" multiple className="hidden"
+                onChange={(e) => uploadFiles(Array.from(e.target.files ?? []))} />
               <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
                 className="w-full text-xs px-3 py-2 rounded-lg font-body font-bold border border-teal-500/25 text-teal-300/90 hover:border-teal-500/50 hover:bg-teal-500/10 disabled:opacity-40 transition-all">
-                {uploading ? 'Enviando...' : '+ Anexar arquivo'}
+                {uploading
+                  ? uploadProgress
+                    ? `Enviando ${uploadProgress.done + 1} de ${uploadProgress.total}...`
+                    : 'Enviando...'
+                  : '+ Anexar arquivos'}
               </button>
             </section>
 
-            {/* Marcações */}
+            {/* Aprovações */}
             {doc.mentions.length > 0 && (
               <section>
                 <h3 className="text-[11px] font-display font-black tracking-widest text-white/40 uppercase mb-2">
-                  Pessoas marcadas
+                  Aprovações
+                  <span className="ml-1.5 text-white/25 font-body font-normal normal-case tracking-normal">
+                    · {doc.mentions.filter((m) => m.approval !== 'PENDING').length} de {doc.mentions.length} decidiram
+                  </span>
                 </h3>
                 <ul className="space-y-2">
                   {doc.mentions.map((m) => {
-                    const isMine = user?.id === m.mentionedUser.id
-                    const canReply = !m.reply && (isMine || user?.role === 'ADMIN')
+                    const isMine   = user?.id === m.mentionedUser.id
+                    // Quem já decidiu pode mudar de ideia; o admin decide por
+                    // quem saiu da empresa e deixou a aprovação pendente.
+                    const canDecide = isMine || user?.role === 'ADMIN'
+                    const badge = APPROVAL_BADGE[m.approval]
 
                     return (
                       <li key={m.id} className="px-3 py-2.5 rounded-xl border border-white/8 bg-white/3">
@@ -286,14 +350,20 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
                           <span className="min-w-0 flex-1">
                             <span className="block text-sm font-body font-semibold text-white/85 truncate">
                               {m.mentionedUser.name}
+                              {isMine && <span className="text-white/35 font-normal"> (você)</span>}
                             </span>
                             <span className="block text-[10px] font-body text-white/35">
-                              marcado por {m.mentionedBy.name}
+                              {m.decidedAt
+                                ? `${badge.verb} em ${formatDateTime(m.decidedAt)}`
+                                : `solicitado por ${m.mentionedBy.name}`}
                             </span>
                           </span>
-                          {m.reply
-                            ? <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-emerald-500/30 text-emerald-300 font-body font-bold">respondeu</span>
-                            : <span className="text-[10px] px-1.5 py-0.5 rounded-md border border-amber-500/30 text-amber-300 font-body font-bold">aguardando</span>}
+                          <span className={cn(
+                            'text-[10px] px-1.5 py-0.5 rounded-md border font-body font-bold whitespace-nowrap',
+                            badge.color,
+                          )}>
+                            {badge.label}
+                          </span>
                         </div>
 
                         {m.reply && (
@@ -302,27 +372,32 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
                           </p>
                         )}
 
-                        {canReply && (
-                          replyFor === m.id ? (
+                        {canDecide && (
+                          decidingFor === m.id ? (
                             <div className="mt-2 pl-8 space-y-1.5">
-                              <textarea value={replyText} onChange={(e) => setReplyText(e.target.value)}
-                                rows={2} autoFocus placeholder="Sua resposta"
+                              <textarea value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)}
+                                rows={2} autoFocus
+                                placeholder="Comentário (obrigatório ao reprovar)"
                                 className="w-full px-3 py-2 rounded-xl text-sm font-body input-space resize-none" />
-                              <div className="flex gap-2">
-                                <button onClick={() => sendReply(m.id)}
-                                  className="text-xs px-3 py-1.5 rounded-lg font-body font-bold border border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/12 transition-all">
-                                  Responder
+                              <div className="flex flex-wrap gap-2">
+                                <button onClick={() => decide(m.id, 'APPROVED')} disabled={savingDecision}
+                                  className="text-xs px-3 py-1.5 rounded-lg font-body font-bold border border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/12 disabled:opacity-40 transition-all">
+                                  ✓ Aprovar
                                 </button>
-                                <button onClick={() => { setReplyFor(null); setReplyText('') }}
+                                <button onClick={() => decide(m.id, 'REJECTED')} disabled={savingDecision}
+                                  className="text-xs px-3 py-1.5 rounded-lg font-body font-bold border border-red-500/35 text-red-300 hover:bg-red-500/12 disabled:opacity-40 transition-all">
+                                  ✕ Reprovar
+                                </button>
+                                <button onClick={() => { setDecidingFor(null); setDecisionComment('') }}
                                   className="text-xs px-2.5 py-1.5 rounded-lg font-body text-white/45 hover:text-white/80 transition-colors">
                                   cancelar
                                 </button>
                               </div>
                             </div>
                           ) : (
-                            <button onClick={() => { setReplyFor(m.id); setReplyText('') }}
+                            <button onClick={() => { setDecidingFor(m.id); setDecisionComment(m.reply ?? '') }}
                               className="mt-2 ml-8 text-xs px-2.5 py-1 rounded-lg font-body font-bold border border-white/14 text-white/55 hover:text-white/85 hover:border-white/28 transition-all">
-                              Responder
+                              {m.approval === 'PENDING' ? 'Aprovar ou reprovar' : 'Mudar decisão'}
                             </button>
                           )
                         )}

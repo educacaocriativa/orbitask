@@ -9,7 +9,7 @@ import {
   deleteDocument,
   attachFile,
   removeFile,
-  replyToMention,
+  decideApproval,
   listTimelineBoards,
   createTimelineBoard,
   listBoardPeople,
@@ -195,11 +195,15 @@ export async function timelineRoutes(app: FastifyInstance) {
     return reply.send({ document })
   })
 
-  // ── PATCH /timeline/mentions/:id/reply ───────────────────
-  app.patch('/timeline/mentions/:id/reply', { preHandler: [authenticate] }, async (request, reply) => {
+  // ── PATCH /timeline/mentions/:id/approval ────────────────
+  // Registra aprovação ou reprovação. Não altera nem bloqueia o documento.
+  app.patch('/timeline/mentions/:id/approval', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const { reply: text } = request.body as { reply?: string }
-    if (!text) throw new AppError('Escreva uma resposta.', 400)
+    const body   = request.body as { approval?: string; comment?: string }
+
+    if (body.approval !== 'APPROVED' && body.approval !== 'REJECTED') {
+      throw new AppError('Informe a decisão (APPROVED ou REJECTED).', 400)
+    }
 
     const mention = await prisma.timelineMention.findUnique({
       where:  { id },
@@ -208,7 +212,9 @@ export async function timelineRoutes(app: FastifyInstance) {
     if (!mention) throw new AppError('Marcação não encontrada', 404)
     await assertDocumentAccess(mention.documentId, request.user)
 
-    const document = await replyToMention(id, text, request.user)
+    const document = await decideApproval(
+      id, { approval: body.approval, comment: body.comment }, request.user,
+    )
     return reply.send({ document })
   })
 

@@ -3,6 +3,16 @@ import { env } from '../config/env'
 import { prisma } from '../database/prisma'
 import { NotificationType } from '@prisma/client'
 
+/**
+ * AAAA-MM-DD -> DD/MM/AAAA por manipulação de texto.
+ * `new Date('2026-08-07')` seria meia-noite UTC e exibiria 06/08 no Brasil.
+ */
+function formatBrDate(date?: string): string {
+  if (!date) return ''
+  const [y, m, d] = date.slice(0, 10).split('-')
+  return y && m && d ? `${d}/${m}/${y}` : date
+}
+
 const evolutionClient = axios.create({
   baseURL: env.EVOLUTION_API_URL,
   headers: {
@@ -204,6 +214,32 @@ export class WhatsAppService {
     return this.sendMessage({ phone: params.recipientPhone, message })
   }
 
+  /** Pedido de aprovação de documento da Timeline. */
+  async notifyTimelineApproval(params: {
+    recipientPhone: string
+    recipientName: string
+    requestedBy: string
+    documentName: string
+    documentDate: string
+    projectTitle: string
+  }) {
+    const message = [
+      `🗓 *Orbitask — Aprovação solicitada*`,
+      ``,
+      `Olá, ${params.recipientName}!`,
+      ``,
+      `*${params.requestedBy}* pediu sua aprovação em um documento.`,
+      ``,
+      `📁 *Projeto:* ${params.projectTitle}`,
+      `📄 *Documento:* ${params.documentName}`,
+      `📅 *Data:* ${params.documentDate}`,
+      ``,
+      `Acesse a Timeline no Orbitask para aprovar ou reprovar.`,
+    ].join('\n')
+
+    return this.sendMessage({ phone: params.recipientPhone, message })
+  }
+
   async notifyDeadlineExpired(params: {
     recipientPhone: string
     recipientName: string
@@ -316,6 +352,30 @@ export class WhatsAppService {
           cardId: notification.card?.id,
           boardId: notification.card?.board?.id,
         })
+        break
+
+      // MENTION nunca era tratado: caía no default, a notificação virava
+      // FAILED e ninguém recebia nada. Vale para menção de card também.
+      case NotificationType.MENTION:
+        if (payload.source === 'timeline') {
+          success = await this.notifyTimelineApproval({
+            recipientPhone: notification.recipient.phoneWhatsapp,
+            recipientName:  notification.recipient.name,
+            requestedBy:    (payload.mentionedByName as string) ?? 'Alguém',
+            documentName:   (payload.documentName as string) ?? '',
+            documentDate:   formatBrDate(payload.documentDate as string),
+            projectTitle:   (payload.projectTitle as string) ?? '',
+          })
+        } else {
+          success = await this.notifyMention({
+            recipientPhone: notification.recipient.phoneWhatsapp,
+            recipientName:  notification.recipient.name,
+            mentionedBy:    (payload.mentionedByName as string) ?? 'Alguém',
+            cardTitle:      notification.card?.title ?? (payload.cardTitle as string) ?? '',
+            boardTitle:     notification.card?.board?.title ?? (payload.boardTitle as string) ?? '',
+            contextPreview: (payload.preview as string) ?? '',
+          })
+        }
         break
 
       default:
