@@ -186,9 +186,15 @@ export async function timelineRoutes(app: FastifyInstance) {
   // ── PATCH /timeline/documents/:id — texto e realocação ───
   app.patch('/timeline/documents/:id', { preHandler: [authenticate] }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const body   = request.body as { name?: string; description?: string | null; boardId?: string }
+    const body   = request.body as {
+      name?: string; description?: string | null; boardId?: string
+      approverIds?: string[]; mentionIds?: string[]
+    }
 
-    if (body.name === undefined && body.description === undefined && body.boardId === undefined) {
+    if (
+      body.name === undefined && body.description === undefined && body.boardId === undefined &&
+      body.approverIds === undefined && body.mentionIds === undefined
+    ) {
       throw new AppError('Nada para alterar.', 400)
     }
     await assertDocumentAccess(id, request.user)

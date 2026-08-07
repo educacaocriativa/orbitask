@@ -7,7 +7,8 @@ import { useEscapeToClose } from './useEscapeToClose'
 import { Avatar } from '@/components/ui/Avatar'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
-import type { TimelineDocument, TimelineApproval } from '@/types/timeline'
+import { PersonPicker } from './PersonPicker'
+import type { TimelineDocument, TimelineApproval, TimelinePerson } from '@/types/timeline'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024
 
@@ -24,12 +25,14 @@ function formatDateTime(iso: string): string {
 
 interface Props {
   document: TimelineDocument | null
+  /** Quem pode ser marcado — membros da timeline do projeto. */
+  people: TimelinePerson[]
   onClose: () => void
   onChanged: (document: TimelineDocument) => void
   onDeleted: (documentId: string) => void
 }
 
-export function DocumentDetailModal({ document: doc, onClose, onChanged, onDeleted }: Props) {
+export function DocumentDetailModal({ document: doc, people, onClose, onChanged, onDeleted }: Props) {
   useEscapeToClose(!!doc, onClose)
   const { user } = useAuthStore()
   const [uploading, setUploading] = useState(false)
@@ -42,6 +45,8 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
   const [editing, setEditing]         = useState(false)
   const [editName, setEditName]       = useState('')
   const [editDescription, setEditDescription] = useState('')
+  const [editApprovers, setEditApprovers] = useState<TimelinePerson[]>([])
+  const [editCited, setEditCited]         = useState<TimelinePerson[]>([])
   const [savingEdit, setSavingEdit]   = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -65,6 +70,8 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
     if (!doc) return
     setEditName(doc.name)
     setEditDescription(doc.description ?? '')
+    setEditApprovers(doc.mentions.filter((m) => m.isApprover).map((m) => m.mentionedUser))
+    setEditCited(doc.mentions.filter((m) => !m.isApprover).map((m) => m.mentionedUser))
     setEditing(true)
   }
 
@@ -80,6 +87,8 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
       const { data } = await api.patch(`/timeline/documents/${doc.id}`, {
         name:        editName.trim(),
         description: editDescription.trim() || null,
+        approverIds: editApprovers.map((p) => p.id),
+        mentionIds:  editCited.map((p) => p.id),
       })
       onChanged(data.document)
       setEditing(false)
@@ -255,7 +264,33 @@ export function DocumentDetailModal({ document: doc, onClose, onChanged, onDelet
                   placeholder="Sem descrição"
                   className="w-full px-3 py-2.5 rounded-xl text-sm font-body input-space resize-none"
                 />
-                <div className="flex items-center gap-2">
+
+                {/* Dá para acrescentar marcações depois — inclusive num
+                    documento que não tinha nenhuma. */}
+                <div className="pt-2 space-y-4">
+                  <PersonPicker
+                    label="Citar pessoas"
+                    placeholder="@ digite um nome"
+                    hint="Quem entrar agora recebe o aviso no WhatsApp. Quem já estava não é avisado de novo."
+                    people={people}
+                    selected={editCited}
+                    onChange={setEditCited}
+                    excludeIds={editApprovers.map((p) => p.id)}
+                    tone="cyan"
+                  />
+                  <PersonPicker
+                    label="Pedir aprovação de"
+                    placeholder="@ digite um nome"
+                    hint="Quem já aprovou ou reprovou não pode ser retirado — a decisão fica registrada."
+                    people={people}
+                    selected={editApprovers}
+                    onChange={setEditApprovers}
+                    excludeIds={editCited.map((p) => p.id)}
+                    tone="violet"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
                   <button onClick={saveEdit} disabled={savingEdit}
                     className="text-xs px-3 py-1.5 rounded-lg font-body font-bold border border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/12 disabled:opacity-40 transition-all">
                     {savingEdit ? 'Salvando...' : 'Salvar alterações'}

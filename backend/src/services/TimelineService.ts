@@ -544,6 +544,19 @@ export async function updateDocument(
     },
   })
 
+  // Marcações podem ser acrescentadas depois — inclusive num documento que
+  // não tinha nenhuma.
+  if (input.approverIds !== undefined || input.mentionIds !== undefined) {
+    await syncMentions(document.id, {
+      approverIds:  input.approverIds ?? [],
+      mentionIds:   input.mentionIds  ?? [],
+      documentName: name ?? document.name,
+      documentDate: document.date,
+      projectTitle: document.board?.title ?? 'Sem projeto',
+      actor:        user,
+    })
+  }
+
   // A pasta no Drive carrega o nome do documento; renomear mantém as duas
   // pontas coerentes. Renomear não é destrutivo — nenhum arquivo se perde.
   // Falha aqui não desfaz a edição: o texto no Orbi é o que a pessoa vê.
@@ -558,6 +571,96 @@ export async function updateDocument(
   }
 
   return getDocument(id)
+}
+
+/**
+ * Ajusta as marcações de um documento já criado.
+ *
+ * Recebe as listas COMPLETAS e resolve a diferença: quem entrou recebe aviso,
+ * quem trocou de papel é atualizado, quem saiu é removido.
+ *
+ * Duas regras que valem registrar:
+ *
+ * - Quem JÁ decidiu não é removido nem rebaixado a citado. Apagar uma
+ *   assinatura registrada esvaziaria o sentido do registro; a pessoa fica.
+ * - Só quem entra agora recebe WhatsApp. Reavisar quem já estava seria
+ *   spam a cada edição de vírgula no texto.
+ */
+async function syncMentions(
+  documentId: string,
+  params: {
+    approverIds:  string[]
+    mentionIds:   string[]
+    documentName: string
+    documentDate: Date
+    projectTitle: string
+    actor:        { id: string; role: string }
+  },
+) {
+  const atuais = await prisma.timelineMention.findMany({
+    where:  { documentId },
+    select: { id: true, mentionedUserId: true, isApprover: true, approval: true },
+  })
+  const porUsuario = new Map(atuais.map((m) => [m.mentionedUserId, m]))
+
+  const aprovadores = new Set(params.approverIds)
+  const desejados   = new Map<string, boolean>() // userId -> isApprover
+  for (const id of params.mentionIds)  desejados.set(id, false)
+  for (const id of params.approverIds) desejados.set(id, true) // aprovador vence
+
+  // ── Remoções ──
+  for (const atual of atuais) {
+    if (desejados.has(atual.mentionedUserId)) continue
+
+    if (atual.approval !== 'PENDING') {
+      throw new AppError(
+        'Não é possível remover quem já aprovou ou reprovou. A decisão fica registrada.',
+        400,
+      )
+    }
+    await prisma.timelineMention.delete({ where: { id: atual.id } })
+  }
+
+  // ── Inclusões e trocas de papel ──
+  const novos: string[] = []
+  for (const [userId, isApprover] of desejados) {
+    const atual = porUsuario.get(userId)
+
+    if (!atual) {
+      novos.push(userId)
+      continue
+    }
+    if (atual.isApprover === isApprover) continue
+
+    // Rebaixar quem já assinou apagaria a decisão da tela de aprovações.
+    if (!isApprover && atual.approval !== 'PENDING') {
+      throw new AppError(
+        'Não é possível transformar em citação quem já aprovou ou reprovou.',
+        400,
+      )
+    }
+    await prisma.timelineMention.update({
+      where: { id: atual.id },
+      data:  { isApprover },
+    })
+  }
+
+  if (novos.length === 0) return
+
+  const actor = await prisma.user.findUnique({
+    where: { id: params.actor.id }, select: { name: true },
+  })
+
+  await processTimelineMentions({
+    documentId,
+    documentName:    params.documentName,
+    documentDate:    params.documentDate,
+    projectTitle:    params.projectTitle,
+    approverIds:     novos.filter((id) => aprovadores.has(id)),
+    mentionIds:      novos.filter((id) => !aprovadores.has(id)),
+    mentionedById:   params.actor.id,
+    mentionedByName: actor?.name ?? 'Alguém',
+  })
 }
 
 // ── Exclusão (só ADMIN) ────────────────────────────────────────────────────

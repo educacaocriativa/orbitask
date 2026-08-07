@@ -222,6 +222,7 @@ export default function TimelineBoardPage() {
       {openDocument && (
         <DocumentDetailModal
           document={openDocument}
+          people={people}
           onClose={() => setOpenDocument(null)}
           onChanged={applyDocument}
           onDeleted={removeDocument}
