@@ -452,34 +452,56 @@ export function DocumentDetailModal({ document: doc, people, onClose, onChanged,
                           </p>
                         )}
 
+                        {/* Aprovar é UM clique. Antes, "Aprovar ou reprovar"
+                            só abria a caixa de comentário e o botão real ficava
+                            escondido dentro — as pessoas achavam que tinham
+                            aprovado e nada era enviado. */}
                         {canDecide && (
-                          decidingFor === m.id ? (
-                            <div className="mt-2 pl-8 space-y-1.5">
-                              <textarea value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)}
-                                rows={2} autoFocus
-                                placeholder="Comentário (obrigatório ao reprovar)"
-                                className="w-full px-3 py-2 rounded-xl text-sm font-body input-space resize-none" />
+                          <div className="mt-2 pl-8 space-y-2">
+                            {/* Reprovar exige motivo, então a caixa aparece
+                                antes — só nesse caso. */}
+                            {decidingFor === m.id && (
+                              <div className="space-y-1.5">
+                                <textarea value={decisionComment} onChange={(e) => setDecisionComment(e.target.value)}
+                                  rows={2} autoFocus
+                                  placeholder="Por que está reprovando? (obrigatório)"
+                                  className="w-full px-3 py-2 rounded-xl text-sm font-body input-space resize-none" />
+                                <div className="flex flex-wrap gap-2">
+                                  <button onClick={() => decide(m.id, 'REJECTED')} disabled={savingDecision}
+                                    className="text-xs px-3 py-1.5 rounded-lg font-body font-bold border border-red-500/45 bg-red-500/12 text-red-300 hover:bg-red-500/20 disabled:opacity-40 transition-all">
+                                    {savingDecision ? 'Enviando...' : 'Confirmar reprovação'}
+                                  </button>
+                                  <button onClick={() => { setDecidingFor(null); setDecisionComment('') }}
+                                    disabled={savingDecision}
+                                    className="text-xs px-2.5 py-1.5 rounded-lg font-body text-white/45 hover:text-white/80 disabled:opacity-40 transition-colors">
+                                    cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {decidingFor !== m.id && (
                               <div className="flex flex-wrap gap-2">
-                                <button onClick={() => decide(m.id, 'APPROVED')} disabled={savingDecision}
-                                  className="text-xs px-3 py-1.5 rounded-lg font-body font-bold border border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/12 disabled:opacity-40 transition-all">
-                                  ✓ Aprovar
+                                {/* Ja aprovou: o botao vira confirmacao, sem
+                                    convidar a clicar de novo. */}
+                                <button onClick={() => decide(m.id, 'APPROVED')}
+                                  disabled={savingDecision || m.approval === 'APPROVED'}
+                                  className={cn(
+                                    'text-xs px-3 py-1.5 rounded-lg font-body font-bold border transition-all',
+                                    m.approval === 'APPROVED'
+                                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300/70 cursor-default'
+                                      : 'border-emerald-500/45 bg-emerald-500/12 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40',
+                                  )}>
+                                  {savingDecision ? 'Enviando...' : m.approval === 'APPROVED' ? '✓ Você aprovou' : '✓ Aprovar'}
                                 </button>
-                                <button onClick={() => decide(m.id, 'REJECTED')} disabled={savingDecision}
-                                  className="text-xs px-3 py-1.5 rounded-lg font-body font-bold border border-red-500/35 text-red-300 hover:bg-red-500/12 disabled:opacity-40 transition-all">
-                                  ✕ Reprovar
-                                </button>
-                                <button onClick={() => { setDecidingFor(null); setDecisionComment('') }}
-                                  className="text-xs px-2.5 py-1.5 rounded-lg font-body text-white/45 hover:text-white/80 transition-colors">
-                                  cancelar
+                                <button onClick={() => { setDecidingFor(m.id); setDecisionComment('') }}
+                                  disabled={savingDecision}
+                                  className="text-xs px-3 py-1.5 rounded-lg font-body font-bold border border-red-500/30 text-red-300/80 hover:bg-red-500/10 hover:border-red-500/50 disabled:opacity-40 transition-all">
+                                  {m.approval === 'REJECTED' ? '✕ Mudar reprovação' : '✕ Reprovar'}
                                 </button>
                               </div>
-                            </div>
-                          ) : (
-                            <button onClick={() => { setDecidingFor(m.id); setDecisionComment(m.reply ?? '') }}
-                              className="mt-2 ml-8 text-xs px-2.5 py-1 rounded-lg font-body font-bold border border-white/14 text-white/55 hover:text-white/85 hover:border-white/28 transition-all">
-                              {m.approval === 'PENDING' ? 'Aprovar ou reprovar' : 'Mudar decisão'}
-                            </button>
-                          )
+                            )}
+                          </div>
                         )}
                       </li>
                     )
