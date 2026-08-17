@@ -155,10 +155,14 @@ export async function cardRoutes(app: FastifyInstance) {
         },
         board: { select: { id: true, title: true } },
         sections: {
-          orderBy: { createdAt: 'asc' },
+          // Ordem das ETAPAS no quadro, não a ordem em que o card passou por
+          // elas. Um card que foi da etapa 3 para a 1 e depois para a 5
+          // aparecia como 3, 1, 5 — enquanto no Drive as pastas estão 01, 02,
+          // 03. A tela precisa espelhar a pasta.
+          orderBy: { column: { position: 'asc' } },
           include: {
             owner: { select: { id: true, name: true, avatarUrl: true } },
-            column: { select: { id: true, title: true, color: true } },
+            column: { select: { id: true, title: true, color: true, position: true } },
             files: true,
             mentions: {
               orderBy: { createdAt: 'asc' },
@@ -175,7 +179,26 @@ export async function cardRoutes(app: FastifyInstance) {
 
     if (!card) throw new AppError('Card not found', 404)
 
-    return reply.send({ card })
+    // Número da etapa igual ao do Drive: é o índice entre as etapas ATIVAS do
+    // quadro, não o `position` bruto — que abre buracos quando alguma é
+    // arquivada. Ver `columnFolderName` em utils/columnFolderSync.
+    const activeColumns = await prisma.column.findMany({
+      where:   { boardId: card.boardId, isArchived: false },
+      orderBy: { position: 'asc' },
+      select:  { id: true },
+    })
+    const stepNumbers = new Map(activeColumns.map((c, i) => [c.id, i + 1]))
+
+    const cardWithSteps = {
+      ...card,
+      sections: card.sections.map((s) => ({
+        ...s,
+        // null quando a etapa foi arquivada: ela não tem número no Drive.
+        stepNumber: stepNumbers.get(s.columnId) ?? null,
+      })),
+    }
+
+    return reply.send({ card: cardWithSteps })
   })
 
   // ── PATCH /cards/:id ─────────────────────────────────────

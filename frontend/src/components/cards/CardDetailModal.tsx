@@ -42,15 +42,30 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
 
   const isAdmin = user?.role === 'ADMIN'
 
-  // Display sections newest-first while preserving "previous (chronological) section" reference
+  /**
+   * Exibe as etapas na ordem do QUADRO (01, 02, 03…), igual às pastas do
+   * Drive — a API já entrega assim.
+   *
+   * `prevSection` continua sendo a etapa anterior na CRONOLOGIA, não na tela:
+   * é ela que alimenta o "Buscar arquivo da etapa anterior", e o arquivo veio
+   * de onde o card esteve antes, não de quem aparece acima na lista.
+   */
   const orderedSections = useMemo(() => {
     if (!card?.sections) return [] as { section: any; prevSection: any | null }[]
     const arr = card.sections as any[]
-    const withPrev = arr.map((section, i) => ({
+
+    const cronologica = [...arr].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    )
+    const anteriorDe = new Map<string, any>()
+    cronologica.forEach((s, i) => {
+      if (i > 0) anteriorDe.set(s.id, cronologica[i - 1])
+    })
+
+    return arr.map((section) => ({
       section,
-      prevSection: i > 0 ? arr[i - 1] : null,
+      prevSection: anteriorDe.get(section.id) ?? null,
     }))
-    return [...withPrev].reverse()
   }, [card?.sections])
 
   useEffect(() => {
@@ -484,7 +499,19 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                           background:  section.column.color + (isCurrent ? '2a' : '14'),
                           boxShadow:   isCurrent ? `0 0 14px -4px ${section.column.color}80` : undefined,
                         }}>
-                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: section.column.color }} />
+                        {/* Mesmo número da pasta no Drive ("01 - Roteiro"),
+                            para a sequência das etapas bater nos dois lugares. */}
+                        {section.stepNumber != null ? (
+                          <span className="text-[10px] font-display font-black tabular-nums px-1.5 py-0.5 rounded-md shrink-0"
+                            style={{
+                              background: section.column.color + '30',
+                              color:      '#fff',
+                            }}>
+                            {String(section.stepNumber).padStart(2, '0')}
+                          </span>
+                        ) : (
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ background: section.column.color }} />
+                        )}
                         <span className="text-xs font-display font-bold tracking-wide text-white">{section.column.title}</span>
                         {isCurrent && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-neon-cyan/20 border border-neon-cyan/45 text-cyan-200 font-display font-black tracking-widest uppercase">
@@ -494,6 +521,16 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                         <span className="text-white/40 text-xs">—</span>
                         <Avatar name={ownerUser.name} src={ownerUser.avatarUrl} size="xs" />
                         <span className="text-xs text-white/70 font-body font-semibold">{ownerUser.name}</span>
+
+                        {/* Quando o card chegou nesta etapa — ao lado da pessoa,
+                            como no Trello. O detalhe completo (chegada/saída)
+                            continua na faixa abaixo. */}
+                        {section.arrivedAt && (
+                          <span className="text-[10px] font-body text-white/40 tabular-nums whitespace-nowrap"
+                            title={`Chegou em ${new Date(section.arrivedAt).toLocaleString('pt-BR')}`}>
+                            {formatStamp(section.arrivedAt)}
+                          </span>
+                        )}
                       </div>
                       <div className="h-px flex-1 bg-white/6" />
 
@@ -772,6 +809,28 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
       </motion.div>
     </div>
   )
+}
+
+/**
+ * Carimbo curto ao lado da pessoa, no estilo do Trello: hoje mostra só a hora,
+ * este ano mostra dia e mês, e mais antigo inclui o ano. O espaço na linha do
+ * cabeçalho é curto — a data completa fica no title (tooltip) e na faixa
+ * detalhada logo abaixo.
+ */
+function formatStamp(iso: string): string {
+  const d = new Date(iso)
+  const agora = new Date()
+  const mesmoDia =
+    d.getDate() === agora.getDate() &&
+    d.getMonth() === agora.getMonth() &&
+    d.getFullYear() === agora.getFullYear()
+
+  if (mesmoDia) {
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  }
+  return d.getFullYear() === agora.getFullYear()
+    ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
+    : d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
 function getFileIcon(mimeType: string): string {
