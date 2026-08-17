@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import type { Board } from '@/stores/boardStore'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 interface MoveCardModalProps {
   open: boolean
@@ -14,6 +15,7 @@ interface MoveCardModalProps {
 }
 
 export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board, sourceDriveFolderUrl }: MoveCardModalProps) {
+  useEscapeToClose(open, onCancel)
   const [isLoading, setIsLoading] = useState(false)
 
   const targetColumn = board?.columns.find((c) => c.id === targetColumnId)
@@ -38,7 +40,6 @@ export function MoveCardModal({ open, onConfirm, onCancel, targetColumnId, board
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={onCancel}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
           />
 

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { api } from '@/lib/api'
 import toast from 'react-hot-toast'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 interface Board { id: string; title: string }
 interface Card  { id: string; title: string }
@@ -16,6 +17,7 @@ interface Props {
 type TargetType = 'ALL' | 'BOARD' | 'CARD' | 'USER'
 
 export function AnnouncementCreateModal({ onClose, onCreated }: Props) {
+  useEscapeToClose(true, onClose)
   const [title, setTitle]           = useState('')
   const [content, setContent]       = useState('')
   const [targetType, setTargetType] = useState<TargetType>('ALL')
@@ -115,7 +117,6 @@ export function AnnouncementCreateModal({ onClose, onCreated }: Props) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
       />
 
       <motion.div

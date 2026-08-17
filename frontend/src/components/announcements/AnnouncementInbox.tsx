@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 interface Reply {
   id: string
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export function AnnouncementInbox({ onClose }: Props) {
+  useEscapeToClose(true, onClose)
   const { user } = useAuthStore()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [selected, setSelected] = useState<Announcement | null>(null)
@@ -75,7 +77,6 @@ export function AnnouncementInbox({ onClose }: Props) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
       />
 
       <motion.div

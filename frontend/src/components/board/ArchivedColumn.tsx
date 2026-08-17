@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useBoardStore, type Card } from '@/stores/boardStore'
 import { cn, getPriorityIcon } from '@/lib/utils'
 import toast from 'react-hot-toast'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 interface ArchivedCardsModalProps {
   boardId: string
@@ -12,6 +13,7 @@ interface ArchivedCardsModalProps {
 }
 
 export function ArchivedColumn({ boardId, onClose, onRestored }: ArchivedCardsModalProps) {
+  useEscapeToClose(true, onClose)
   const { fetchArchivedCards, restoreCard, fetchBoard } = useBoardStore()
   const [cards, setCards]         = useState<Card[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -44,7 +46,6 @@ export function ArchivedColumn({ boardId, onClose, onRestored }: ArchivedCardsMo
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={onClose}
         className="absolute inset-0 bg-black/55 backdrop-blur-xs"
       />
 

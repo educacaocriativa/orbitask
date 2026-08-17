@@ -6,6 +6,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import api from '@/lib/api'
 import { useBoardStore } from '@/stores/boardStore'
 import toast from 'react-hot-toast'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 interface ApiUser { id: string; name: string; email: string; avatarUrl?: string }
 
@@ -44,6 +45,7 @@ const COLORS = [
 ]
 
 export function ColumnManagerModal({ open, onClose, boardId, editColumn }: ColumnManagerProps) {
+  useEscapeToClose(open, onClose)
   const { fetchBoard } = useBoardStore()
 
   const [title,       setTitle]       = useState('')
@@ -158,7 +160,7 @@ export function ColumnManagerModal({ open, onClose, boardId, editColumn }: Colum
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
           <motion.div
             initial={{ opacity: 0, scale: 0.92, y: 20 }}

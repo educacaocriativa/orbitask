@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import { useEscapeToClose } from './useEscapeToClose'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 import { cn } from '@/lib/utils'
 
 const COLORS = ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899']

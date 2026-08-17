@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useBoardStore } from '@/stores/boardStore'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 interface ArchivedColumn {
   id: string
@@ -22,6 +23,7 @@ interface ArchivedColumnsModalProps {
 }
 
 export function ArchivedColumnsModal({ boardId, onClose, onRestored }: ArchivedColumnsModalProps) {
+  useEscapeToClose(true, onClose)
   const { fetchArchivedColumns, restoreColumn, fetchBoard } = useBoardStore()
   const [columns, setColumns]   = useState<ArchivedColumn[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -54,7 +56,6 @@ export function ArchivedColumnsModal({ boardId, onClose, onRestored }: ArchivedC
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={onClose}
         className="absolute inset-0 bg-black/55 backdrop-blur-xs"
       />
 

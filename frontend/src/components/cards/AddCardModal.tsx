@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { cn, getPriorityIcon } from '@/lib/utils'
 import { useBoardStore } from '@/stores/boardStore'
 import toast from 'react-hot-toast'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
 const PRIORITY_LABELS = { LOW: 'Baixa', MEDIUM: 'Média', HIGH: 'Alta', CRITICAL: 'Crítico' }
@@ -14,6 +15,7 @@ interface AddCardModalProps {
 }
 
 export function AddCardModal({ open, onClose, columnId, columnTitle, boardId }: AddCardModalProps) {
+  useEscapeToClose(open, onClose)
   const { addCard } = useBoardStore()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -56,7 +58,6 @@ export function AddCardModal({ open, onClose, columnId, columnTitle, boardId }: 
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
           />
           <motion.div

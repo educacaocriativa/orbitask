@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import { useEscapeToClose } from './useEscapeToClose'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 import type { TimelineBoard, TimelineDocument } from '@/types/timeline'
 
 interface Props {

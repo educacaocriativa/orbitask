@@ -8,6 +8,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { cn, formatDeadline, getPriorityIcon, getPriorityLabel, isOverdue, formatBytes } from '@/lib/utils'
 import { RichTextEditor } from '../sections/RichTextEditor'
 import toast from 'react-hot-toast'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 interface CardDetailModalProps {
   cardId: string
@@ -16,6 +17,7 @@ interface CardDetailModalProps {
 }
 
 export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModalProps) {
+  useEscapeToClose(!!cardId, onClose)
   const { user }                            = useAuthStore()
   const { archiveCard }                     = useBoardStore()
   const [card, setCard]                     = useState<any>(null)
@@ -225,7 +227,6 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={onClose}
         className="absolute inset-0 bg-black/55 backdrop-blur-xs"
       />
 

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { cn } from '@/lib/utils'
 import api from '@/lib/api'
 import toast from 'react-hot-toast'
+import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
 type ImportType = 'users' | 'missions'
 
@@ -24,6 +25,7 @@ interface ImportCSVModalProps {
 }
 
 export function ImportCSVModal({ open, type, onClose, onSuccess }: ImportCSVModalProps) {
+  useEscapeToClose(open, onClose)
   const [file, setFile]           = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -98,7 +100,6 @@ export function ImportCSVModal({ open, type, onClose, onSuccess }: ImportCSVModa
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={onClose}
         className="absolute inset-0 bg-black/55 backdrop-blur-xs"
       />
 
