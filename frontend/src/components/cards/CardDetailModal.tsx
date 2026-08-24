@@ -43,28 +43,19 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
   const isAdmin = user?.role === 'ADMIN'
 
   /**
-   * Exibe as etapas na ordem do QUADRO (01, 02, 03…), igual às pastas do
-   * Drive — a API já entrega assim.
+   * Etapas na ordem cronológica — a história real do card, na sequência em
+   * que ele passou por elas. A API já entrega assim (`orderBy: createdAt`).
    *
-   * `prevSection` continua sendo a etapa anterior na CRONOLOGIA, não na tela:
-   * é ela que alimenta o "Buscar arquivo da etapa anterior", e o arquivo veio
-   * de onde o card esteve antes, não de quem aparece acima na lista.
+   * Como a ordem da tela é a cronológica, `prevSection` é simplesmente a
+   * etapa anterior na lista: é ela que alimenta o "Buscar arquivo da etapa
+   * anterior", e o arquivo veio de onde o card esteve antes.
    */
   const orderedSections = useMemo(() => {
     if (!card?.sections) return [] as { section: any; prevSection: any | null }[]
     const arr = card.sections as any[]
-
-    const cronologica = [...arr].sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-    )
-    const anteriorDe = new Map<string, any>()
-    cronologica.forEach((s, i) => {
-      if (i > 0) anteriorDe.set(s.id, cronologica[i - 1])
-    })
-
-    return arr.map((section) => ({
+    return arr.map((section, i) => ({
       section,
-      prevSection: anteriorDe.get(section.id) ?? null,
+      prevSection: i > 0 ? arr[i - 1] : null,
     }))
   }, [card?.sections])
 
@@ -475,29 +466,12 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                 </div>
               )}
 
-              {orderedSections.map(({ section, prevSection }, idx) => {
+              {orderedSections.map(({ section, prevSection }) => {
                 const isOwner    = canEditSection(section)
                 const ownerUser  = section.owner
                 const isCurrent  = section.column.id === card.currentColumn?.id
 
-                // A API entrega as ativas primeiro e as arquivadas depois.
-                // Marca onde uma vira a outra, para o histórico antigo não
-                // parecer parte da sequência atual do quadro.
-                const anterior = idx > 0 ? orderedSections[idx - 1].section : null
-                const abreArquivadas =
-                  section.isArchivedStep && (!anterior || !anterior.isArchivedStep)
-
                 return (
-                  <div key={section.id + '-wrap'}>
-                  {abreArquivadas && (
-                    <div className="flex items-center gap-3 my-6">
-                      <div className="h-px flex-1 bg-white/8" />
-                      <span className="text-[10px] font-display font-black tracking-widest text-white/30 uppercase whitespace-nowrap">
-                        🗄 Etapas anteriores · já arquivadas no quadro
-                      </span>
-                      <div className="h-px flex-1 bg-white/8" />
-                    </div>
-                  )}
                   <div
                     key={section.id}
                     className={cn(
@@ -516,19 +490,7 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                           background:  section.column.color + (isCurrent ? '2a' : '14'),
                           boxShadow:   isCurrent ? `0 0 14px -4px ${section.column.color}80` : undefined,
                         }}>
-                        {/* Mesmo número da pasta no Drive ("01 - Roteiro"),
-                            para a sequência das etapas bater nos dois lugares. */}
-                        {section.stepNumber != null ? (
-                          <span className="text-[10px] font-display font-black tabular-nums px-1.5 py-0.5 rounded-md shrink-0"
-                            style={{
-                              background: section.column.color + '30',
-                              color:      '#fff',
-                            }}>
-                            {String(section.stepNumber).padStart(2, '0')}
-                          </span>
-                        ) : (
-                          <div className="w-2 h-2 rounded-full shrink-0" style={{ background: section.column.color }} />
-                        )}
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ background: section.column.color }} />
                         <span className="text-xs font-display font-bold tracking-wide text-white">{section.column.title}</span>
                         {isCurrent && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-neon-cyan/20 border border-neon-cyan/45 text-cyan-200 font-display font-black tracking-widest uppercase">
@@ -817,7 +779,6 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                         </div>
                       )
                     })}
-                  </div>
                   </div>
                 )
               })}
