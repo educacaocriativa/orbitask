@@ -475,12 +475,29 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                 </div>
               )}
 
-              {orderedSections.map(({ section, prevSection }) => {
+              {orderedSections.map(({ section, prevSection }, idx) => {
                 const isOwner    = canEditSection(section)
                 const ownerUser  = section.owner
                 const isCurrent  = section.column.id === card.currentColumn?.id
 
+                // A API entrega as ativas primeiro e as arquivadas depois.
+                // Marca onde uma vira a outra, para o histórico antigo não
+                // parecer parte da sequência atual do quadro.
+                const anterior = idx > 0 ? orderedSections[idx - 1].section : null
+                const abreArquivadas =
+                  section.isArchivedStep && (!anterior || !anterior.isArchivedStep)
+
                 return (
+                  <div key={section.id + '-wrap'}>
+                  {abreArquivadas && (
+                    <div className="flex items-center gap-3 my-6">
+                      <div className="h-px flex-1 bg-white/8" />
+                      <span className="text-[10px] font-display font-black tracking-widest text-white/30 uppercase whitespace-nowrap">
+                        🗄 Etapas anteriores · já arquivadas no quadro
+                      </span>
+                      <div className="h-px flex-1 bg-white/8" />
+                    </div>
+                  )}
                   <div
                     key={section.id}
                     className={cn(
@@ -800,6 +817,7 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                         </div>
                       )
                     })}
+                  </div>
                   </div>
                 )
               })}

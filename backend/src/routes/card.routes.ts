@@ -155,11 +155,10 @@ export async function cardRoutes(app: FastifyInstance) {
         },
         board: { select: { id: true, title: true } },
         sections: {
-          // Ordem das ETAPAS no quadro, não a ordem em que o card passou por
-          // elas. Um card que foi da etapa 3 para a 1 e depois para a 5
-          // aparecia como 3, 1, 5 — enquanto no Drive as pastas estão 01, 02,
-          // 03. A tela precisa espelhar a pasta.
-          orderBy: { column: { position: 'asc' } },
+          // A ordem final é montada abaixo (ver `orderedSections`): ordenar
+          // aqui por `column.position` embaralha, porque etapa arquivada
+          // guarda uma position antiga que não corresponde mais ao quadro.
+          orderBy: { createdAt: 'asc' },
           include: {
             owner: { select: { id: true, name: true, avatarUrl: true } },
             column: { select: { id: true, title: true, color: true, position: true } },
@@ -189,14 +188,36 @@ export async function cardRoutes(app: FastifyInstance) {
     })
     const stepNumbers = new Map(activeColumns.map((c, i) => [c.id, i + 1]))
 
-    const cardWithSteps = {
-      ...card,
-      sections: card.sections.map((s) => ({
-        ...s,
-        // null quando a etapa foi arquivada: ela não tem número no Drive.
-        stepNumber: stepNumbers.get(s.columnId) ?? null,
-      })),
-    }
+    const withStep = card.sections.map((s) => ({
+      ...s,
+      // null quando a etapa foi arquivada: ela não tem número no Drive.
+      stepNumber: stepNumbers.get(s.columnId) ?? null,
+      isArchivedStep: !stepNumbers.has(s.columnId),
+    }))
+
+    /**
+     * Etapas ATIVAS primeiro, na ordem do quadro (espelhando as pastas do
+     * Drive); as ARQUIVADAS depois, em ordem cronológica.
+     *
+     * Misturar as duas por `position` embaralha a lista: etapa arquivada
+     * mantém a position que tinha, e essa position não corresponde mais a
+     * lugar nenhum no quadro atual. Num card com 8 de 12 etapas arquivadas, a
+     * ordem exibida não era nem a do quadro nem a cronológica.
+     */
+    const orderedSections = [
+      ...withStep
+        .filter((s) => !s.isArchivedStep)
+        .sort((a, b) => (a.stepNumber ?? 0) - (b.stepNumber ?? 0)),
+      ...withStep
+        .filter((s) => s.isArchivedStep)
+        // `arrivedAt` não existe nas etapas anteriores ao registro de chegada;
+        // `createdAt` é o melhor carimbo disponível para elas.
+        .sort((a, b) =>
+          new Date(a.arrivedAt ?? a.createdAt).getTime() -
+          new Date(b.arrivedAt ?? b.createdAt).getTime()),
+    ]
+
+    const cardWithSteps = { ...card, sections: orderedSections }
 
     return reply.send({ card: cardWithSteps })
   })
