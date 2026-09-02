@@ -304,9 +304,14 @@ function UserFormModal({ open, onClose, onSave, editUser }: {
         const roleChanged = role !== editUser!.role
         await Promise.all([
           api.patch(`/admin/users/${editUser!.id}/role`,    { role }),
-          api.patch(`/admin/users/${editUser!.id}/status`,  { isActive: active }),
           api.patch(`/admin/users/${editUser!.id}/profile`, { name: name.trim(), phoneWhatsapp: phone.trim() || null }),
         ])
+
+        // Fora do Promise.all: desativar pode ser recusado (dono de etapa), e
+        // a mensagem precisa chegar inteira em vez de virar "Erro ao salvar".
+        if (active !== editUser!.isActive) {
+          await api.patch(`/admin/users/${editUser!.id}/status`, { isActive: active })
+        }
         toast.success('Usuário atualizado ✅')
         if (roleChanged) {
           toast('⚠️ Função alterada. O usuário precisa fazer logout e login para as permissões entrarem em vigor em todas as telas.', { duration: 6000 })
@@ -322,7 +327,7 @@ function UserFormModal({ open, onClose, onSave, editUser }: {
       }
       onClose()
     } catch (err: any) {
-      toast.error(err?.response?.data?.error ?? 'Erro ao salvar')
+      toast.error(err?.response?.data?.error ?? 'Erro ao salvar', { duration: 8000 })
     } finally { setSaving(false) }
   }
 
@@ -547,7 +552,10 @@ export default function AdminPage() {
   useEffect(() => {
     Promise.all([
       api.get('/admin/dashboard').then(({ data }) => setStats(data)),
-      api.get('/admin/users').then(({ data }) => setUsers(data.users)),
+      // limit alto: a tela nao tem paginacao, e o padrao da API e 20. Com
+      // mais de 20 pessoas, as demais sumiam do painel — e como a ordem e por
+      // ultimo acesso, sumia justamente quem estava inativo ha mais tempo.
+      api.get('/admin/users', { params: { limit: 500 } }).then(({ data }) => setUsers(data.users)),
       api.get('/admin/logs?limit=50').then(({ data }) => setLogs(data.logs)),
       api.get('/admin/whatsapp/status').then(({ data }) => setWhatsappStatus(data)),
     ]).catch(() => toast.error('Erro ao carregar dados')).finally(() => setIsLoading(false))
@@ -580,8 +588,17 @@ export default function AdminPage() {
     try {
       await api.patch(`/admin/users/${user.id}/status`, { isActive: !user.isActive })
       setUsers((u) => u.map((x) => x.id === user.id ? { ...x, isActive: !x.isActive } : x))
-      toast.success(user.isActive ? 'Usuário desativado' : 'Usuário ativado ✅')
-    } catch { toast.error('Erro') }
+      toast.success(
+        user.isActive
+          ? 'Usuário desativado. Ele saiu das missões e etapas; o histórico foi mantido.'
+          : 'Usuário ativado ✅',
+        { duration: 5000 },
+      )
+    } catch (err: any) {
+      // A recusa por ser dono de etapa explica o que fazer — engolir a
+      // mensagem deixaria o admin sem saber por que nao desativou.
+      toast.error(err?.response?.data?.error ?? 'Erro ao alterar status', { duration: 8000 })
+    }
   }
 
   function openCreate() { setEditingUser(null); setShowUserForm(true) }

@@ -79,15 +79,64 @@ export class AdminService {
   }
 
   // ── Toggle user active status ───────────────────────────
+  /**
+   * Ativa ou desativa um usuário.
+   *
+   * Desativar TAMBÉM desfaz os vínculos de trabalho — participação em missões,
+   * em etapas e nas timelines. Sem isso a pessoa continuava aparecendo como
+   * membro e recebendo demanda depois de sair da empresa, porque essas listas
+   * partem do vínculo e não do `isActive`.
+   *
+   * O histórico é preservado: quem criou card, enviou arquivo ou passou por
+   * cada etapa continua registrado. Some de onde geraria trabalho novo, não de
+   * onde conta o que já aconteceu.
+   */
   async toggleUserStatus(userId: string, isActive: boolean) {
     const user = await prisma.user.findUnique({ where: { id: userId } })
     if (!user) throw new AppError('User not found', 404)
 
-    return prisma.user.update({
-      where: { id: userId },
-      data: { isActive },
-      select: { id: true, name: true, email: true, isActive: true },
+    if (isActive) {
+      // Reativar não recria vínculo: quem readmite escolhe de novo onde a
+      // pessoa entra, em vez de ela reaparecer em lugares esquecidos.
+      return prisma.user.update({
+        where: { id: userId },
+        data: { isActive },
+        select: { id: true, name: true, email: true, isActive: true },
+      })
+    }
+
+    // Etapa sem dono trava o quadro: ninguém consegue mover card nela. Recusa
+    // e diz quais são, para o admin passar a responsabilidade antes.
+    const ownedColumns = await prisma.column.findMany({
+      where:  { ownerId: userId, isArchived: false, board: { isArchived: false } },
+      select: { title: true, board: { select: { title: true } } },
+      orderBy: { title: 'asc' },
     })
+
+    if (ownedColumns.length > 0) {
+      const lista = ownedColumns
+        .map((c) => `"${c.title}" (${c.board.title})`)
+        .join(', ')
+      throw new AppError(
+        `${user.name} é responsável por ${ownedColumns.length} etapa(s): ${lista}. ` +
+        'Passe a responsabilidade para outra pessoa antes de desativar — ' +
+        'etapa sem dono não deixa ninguém mover card.',
+        400,
+      )
+    }
+
+    const [updated] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { isActive },
+        select: { id: true, name: true, email: true, isActive: true },
+      }),
+      prisma.boardMember.deleteMany({ where: { userId } }),
+      prisma.columnMember.deleteMany({ where: { userId } }),
+      prisma.timelineMember.deleteMany({ where: { userId } }),
+    ])
+
+    return updated
   }
 
   // ── Update user role ────────────────────────────────────
