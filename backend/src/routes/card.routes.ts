@@ -26,7 +26,11 @@ export async function cardRoutes(app: FastifyInstance) {
 
     const column = await prisma.column.findUnique({
       where: { id: body.columnId },
-      include: { owner: true, board: true },
+      include: {
+        owner: true,
+        board: true,
+        columnMembers: { select: { user: { select: { email: true } } } },
+      },
     })
     if (!column) throw new AppError('Column not found', 404)
 
@@ -82,6 +86,19 @@ export async function cardRoutes(app: FastifyInstance) {
           if (recursos) {
             resourcesFolderId = recursos.id
             resourcesFolderUrl = recursos.url
+          }
+
+          // Compartilha a pasta nova (e a RECURSOS) direto com quem tem acesso
+          // à etapa, sem esperar o próximo cron de sync do Drive (12h) — evita
+          // o link "Depositar arquivo" ficar sem acesso logo após criar o card.
+          const columnEmails = new Set<string>()
+          if (column.owner.email) columnEmails.add(column.owner.email.toLowerCase())
+          for (const m of column.columnMembers) {
+            if (m.user.email) columnEmails.add(m.user.email.toLowerCase())
+          }
+          if (columnEmails.size > 0) {
+            await googleDrive.shareFolderWithMany(folder.id, [...columnEmails])
+            if (recursos) await googleDrive.shareFolderWithMany(recursos.id, [...columnEmails])
           }
 
           await prisma.card.update({
