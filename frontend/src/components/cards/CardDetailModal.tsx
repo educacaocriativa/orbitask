@@ -584,14 +584,18 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                     )}
 
                     {/* Drive: buscar arquivo da etapa anterior */}
-                    {prevSection?.driveFolderUrl && (
+                    {prevSection?.driveFolderUrl ? (
                       <DriveLink
                         url={prevSection.driveFolderUrl}
                         label={`Buscar arquivo — ${prevSection.owner.name} (${prevSection.column.title})`}
                         icon="📁"
                         variant="get"
                       />
-                    )}
+                    ) : prevSection?.column?.driveDisabled ? (
+                      <NoDriveNotice
+                        text={`A etapa anterior (${prevSection.column.title}) foi criada sem pasta no Drive — não há arquivo para buscar.`}
+                      />
+                    ) : null}
 
                     {/* Rich text editor — locked if not owner */}
                     <div className={cn(
@@ -618,14 +622,18 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                     </div>
 
                     {/* Drive: depositar arquivo nesta etapa */}
-                    {section.driveFolderUrl && (
+                    {section.driveFolderUrl ? (
                       <DriveLink
                         url={section.driveFolderUrl}
                         label={`Depositar arquivo — ${ownerUser.name} (${section.column.title})`}
                         icon="📤"
                         variant="deposit"
                       />
-                    )}
+                    ) : section.column?.driveDisabled ? (
+                      <NoDriveNotice
+                        text="Esta etapa foi criada sem pasta no Drive. Marcaram “não criar pasta” ao criá-la — anexe o arquivo aqui embaixo."
+                      />
+                    ) : null}
 
                     {/* Files */}
                     <div className="space-y-2">
@@ -817,6 +825,22 @@ function getFileIcon(mimeType: string): string {
   if (mimeType.includes('word') || mimeType.includes('document')) return '📝'
   if (mimeType.startsWith('image/')) return '🖼️'
   return '📎'
+}
+
+/**
+ * Explica a ausência do botão de arquivo. Sem isto o botão simplesmente some e
+ * quem abre o card não sabe se é bug, falta de permissão ou escolha de quem
+ * criou a etapa. Só aparece quando a etapa foi criada com "não criar pasta no
+ * Drive" marcado — pasta que sumiu por outro motivo continua sem aviso, porque
+ * aí é problema de verdade e não deve ser normalizado na tela.
+ */
+function NoDriveNotice({ text }: { text: string }) {
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl w-full border border-amber-500/25 bg-amber-500/8">
+      <span className="text-base shrink-0">🚫</span>
+      <p className="text-[11px] text-amber-200/70 font-body leading-relaxed">{text}</p>
+    </div>
+  )
 }
 
 function DriveLink({ url, label, icon, variant }: {

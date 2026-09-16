@@ -179,7 +179,11 @@ export async function cardRoutes(app: FastifyInstance) {
           orderBy: { createdAt: 'asc' },
           include: {
             owner: { select: { id: true, name: true, avatarUrl: true } },
-            column: { select: { id: true, title: true, color: true, position: true } },
+            // `driveDisabled` vai junto para a tela poder dizer POR QUE o botão
+            // de arquivo não aparece: etapa criada sem pasta no Drive é escolha
+            // de quem criou, não falha. Sem esse campo o card some com o botão
+            // e ninguém entende o motivo.
+            column: { select: { id: true, title: true, color: true, position: true, driveDisabled: true } },
             files: true,
             mentions: {
               orderBy: { createdAt: 'asc' },

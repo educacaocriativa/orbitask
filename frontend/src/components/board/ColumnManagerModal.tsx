@@ -52,7 +52,6 @@ export function ColumnManagerModal({ open, onClose, boardId, editColumn }: Colum
   const [color,       setColor]       = useState('#7c3aed')
   const [primaryOwner, setPrimaryOwner] = useState<ApiUser | null>(null)
   const [members,     setMembers]     = useState<ApiUser[]>([])   // all selected owners
-  const [driveDisabled, setDriveDisabled] = useState(false)
 
   const [allUsers,    setAllUsers]    = useState<ApiUser[]>([])
   const [search,      setSearch]      = useState('')
@@ -66,12 +65,10 @@ export function ColumnManagerModal({ open, onClose, boardId, editColumn }: Colum
     if (editColumn) {
       setTitle(editColumn.title)
       setColor(editColumn.color)
-      setDriveDisabled(false)
     } else {
       setTitle(''); setColor('#7c3aed')
       setPrimaryOwner(null)
       setMembers([])
-      setDriveDisabled(false)
     }
   }, [open])
 
@@ -143,7 +140,10 @@ export function ColumnManagerModal({ open, onClose, boardId, editColumn }: Colum
         await api.patch(`/columns/${editColumn.id}`, payload)
         toast.success('Etapa atualizada 🛸')
       } else {
-        await api.post(`/boards/${boardId}/columns`, { ...payload, driveDisabled })
+        // Toda etapa nova nasce com pasta no Drive. A opção de criar sem pasta
+        // saiu daqui: marcavam por engano em etapas de ENTREGA, e como não dava
+        // para desfazer, o card ficava sem o botão de arquivo para sempre.
+        await api.post(`/boards/${boardId}/columns`, payload)
         toast.success('Etapa criada! 🚀')
       }
       await fetchBoard(boardId)
@@ -215,34 +215,6 @@ export function ColumnManagerModal({ open, onClose, boardId, editColumn }: Colum
                   ))}
                 </div>
               </div>
-
-              {/* Drive folder option — only visible when CREATING a new column */}
-              {!editColumn && (
-                <div>
-                  <label className={cn(
-                    'flex items-start gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all',
-                    driveDisabled
-                      ? 'border-amber-500/50 bg-amber-500/10'
-                      : 'border-white/12 bg-white/3 hover:border-white/20',
-                  )}>
-                    <input
-                      type="checkbox"
-                      checked={driveDisabled}
-                      onChange={(e) => setDriveDisabled(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 accent-amber-400 cursor-pointer"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-display font-black text-white/90 uppercase tracking-widest">
-                        🚫 Não criar pasta no Drive
-                      </div>
-                      <p className="text-[11px] text-white/55 font-body mt-0.5 leading-relaxed">
-                        Use para etapas internas (controle, aprovação, etc) que não precisam de pasta no Google Drive.
-                        <strong className="text-amber-300/80"> Esta opção não pode ser alterada depois de criada.</strong>
-                      </p>
-                    </div>
-                  </label>
-                </div>
-              )}
 
               {/* Member picker */}
               <div>
