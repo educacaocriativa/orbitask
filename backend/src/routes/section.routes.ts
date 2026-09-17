@@ -62,15 +62,28 @@ export async function sectionRoutes(app: FastifyInstance) {
       },
     })
 
-    // Process new mentions
+    // Process new mentions.
+    //
+    // Só quem ainda não estava marcado na etapa. O conteúdo carrega as marcações
+    // antigas junto, então sem esse filtro cada novo salvamento reavisaria todo
+    // mundo que já tinha sido marcado antes — WhatsApp repetido a cada edição.
     if (mentionIds.length > 0) {
-      await processMentions({
-        sectionId: id,
-        mentionedUserIds: mentionIds,
-        mentionedById: request.user.id,
-        mentionedByName: request.user.name,
-        card: section.card,
+      const jaMarcados = await prisma.mention.findMany({
+        where: { cardSectionId: id, mentionedUserId: { in: mentionIds } },
+        select: { mentionedUserId: true },
       })
+      const conhecidos = new Set(jaMarcados.map((m) => m.mentionedUserId))
+      const novos = mentionIds.filter((uid) => !conhecidos.has(uid))
+
+      if (novos.length > 0) {
+        await processMentions({
+          sectionId: id,
+          mentionedUserIds: novos,
+          mentionedById: request.user.id,
+          mentionedByName: request.user.name,
+          card: section.card,
+        })
+      }
     }
 
     // Log mensagem salva

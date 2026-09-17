@@ -7,6 +7,7 @@ import { useBoardStore } from '@/stores/boardStore'
 import { Avatar } from '@/components/ui/Avatar'
 import { cn, formatDeadline, getPriorityIcon, getPriorityLabel, isOverdue, formatBytes } from '@/lib/utils'
 import { RichTextEditor } from '../sections/RichTextEditor'
+import { MentionPicker } from './MentionPicker'
 import toast from 'react-hot-toast'
 import { useEscapeToClose } from '@/hooks/useEscapeToClose'
 
@@ -144,6 +145,39 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
     } finally {
       setDeletingSection(false)
       setConfirmDeleteSectionId(null)
+    }
+  }
+
+  /**
+   * Marca alguém na etapa sem passar por editor de texto.
+   *
+   * O backend extrai as marcações de dentro do JSON do TipTap (nós do tipo
+   * `mention`), então montamos aqui esse mesmo formato com só a marcação
+   * dentro. Assim a marcação continua disparando o WhatsApp pelo caminho de
+   * sempre, sem precisar de rota nova.
+   */
+  async function mentionUser(sectionId: string, user: { id: string; name: string }) {
+    // O PATCH substitui o content inteiro, então a marcação nova entra DEPOIS do
+    // que já estava escrito. Mandar só a marcação apagaria o texto da etapa.
+    const atual = card?.sections?.find((s: any) => s.id === sectionId)?.content as any
+    const anterior = Array.isArray(atual?.content) ? atual.content : []
+    const doc = {
+      type: 'doc',
+      content: [
+        ...anterior,
+        {
+          type: 'paragraph',
+          content: [{ type: 'mention', attrs: { id: user.id, label: user.name } }],
+        },
+      ],
+    }
+    try {
+      await api.patch(`/sections/${sectionId}`, { content: doc })
+      const { data } = await api.get(`/cards/${cardId}`)
+      setCard(data.card)
+      toast.success(`${user.name.split(' ')[0]} foi marcado 🔔`)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Erro ao marcar pessoa')
     }
   }
 
@@ -606,29 +640,19 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                       />
                     ) : null}
 
-                    {/* Rich text editor — locked if not owner */}
-                    <div className={cn(
-                      'rounded-xl border p-3 transition-all',
-                      isOwner
-                        ? 'bg-white/5 border-white/10'
-                        : 'bg-white/2 border-white/6 opacity-80',
-                    )}>
-                      {!isOwner && (
-                        <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-white/8">
-                          <span className="text-xs">🔒</span>
-                          <span className="text-[11px] text-white/45 font-body font-semibold">
-                            Apenas <strong className="text-white/70">{ownerUser.name}</strong> pode editar este campo
-                          </span>
-                        </div>
-                      )}
-                      <RichTextEditor
-                        content={section.content}
-                        onSave={(content) => saveSection(section.id, content)}
-                        isSaving={savingSection === section.id}
-                        placeholder={isOwner ? `Escreva aqui suas atualizações...` : `Conteúdo de ${ownerUser.name}`}
-                        readOnly={!isOwner}
-                      />
-                    </div>
+                    {/* Texto já escrito, só leitura. O campo de escrever saiu da
+                        etapa — o que fica é arquivo e marcação —, mas o que as
+                        pessoas escreveram antes continua à vista. */}
+                    {hasText(section.content) && (
+                      <div className="rounded-xl border border-white/8 bg-white/2 p-3">
+                        <RichTextEditor
+                          content={section.content}
+                          onSave={(content) => saveSection(section.id, content)}
+                          placeholder=""
+                          readOnly
+                        />
+                      </div>
+                    )}
 
                     {/* Drive: depositar arquivo. Etapa sem pasta própria cai na
                         última pasta disponível — senão não haveria onde entregar. */}
@@ -655,14 +679,12 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                         <span className="text-xs text-white/55 font-body font-bold uppercase tracking-widest">
                           📎 Arquivos ({section.files?.length ?? 0})
                         </span>
-                        {/* Only owner can upload — anyone can download */}
-                        {isOwner && (
-                          <label className="text-xs text-neon-cyan/80 hover:text-neon-cyan cursor-pointer font-body font-bold transition-colors">
-                            + Anexar arquivo
-                            <input type="file" className="hidden" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp"
-                              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(section.id, f) }} />
-                          </label>
-                        )}
+                        {/* O arquivo agora vai para a pasta do Drive, pelos botões
+                            acima. Aqui sobra só a marcação de pessoa. */}
+                        <MentionPicker
+                          excludeIds={(section.mentions ?? []).map((m: any) => m.mentionedUserId)}
+                          onPick={(u) => mentionUser(section.id, u)}
+                        />
                       </div>
 
                       {section.files?.length > 0 && (
@@ -839,6 +861,25 @@ function getFileIcon(mimeType: string): string {
   if (mimeType.includes('word') || mimeType.includes('document')) return '📝'
   if (mimeType.startsWith('image/')) return '🖼️'
   return '📎'
+}
+
+/**
+ * O conteúdo da etapa é JSON do TipTap. Um documento "vazio" não é nulo: vem um
+ * parágrafo sem nada dentro. Sem esta checagem, toda etapa sem texto renderizaria
+ * uma caixa cinza vazia.
+ */
+function hasText(content: unknown): boolean {
+  if (!content || typeof content !== 'object') return false
+  let found = false
+  function walk(node: unknown) {
+    if (found || !node || typeof node !== 'object') return
+    const obj = node as Record<string, unknown>
+    if (typeof obj.text === 'string' && obj.text.trim()) { found = true; return }
+    if (obj.type === 'mention') { found = true; return }
+    if (Array.isArray(obj.content)) obj.content.forEach(walk)
+  }
+  walk(content)
+  return found
 }
 
 /**
