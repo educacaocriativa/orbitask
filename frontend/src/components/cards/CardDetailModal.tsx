@@ -46,17 +46,30 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
    * Etapas na ordem cronológica — a história real do card, na sequência em
    * que ele passou por elas. A API já entrega assim (`orderBy: createdAt`).
    *
-   * Como a ordem da tela é a cronológica, `prevSection` é simplesmente a
-   * etapa anterior na lista: é ela que alimenta o "Buscar arquivo da etapa
-   * anterior", e o arquivo veio de onde o card esteve antes.
+   * `prevSection` é a última etapa anterior QUE TEM PASTA, não simplesmente a
+   * etapa de trás. Etapa criada sem pasta no Drive não apaga o arquivo que já
+   * foi depositado antes dela: o arquivo continua lá, uma etapa mais atrás, e
+   * é para lá que o "Buscar arquivo" tem que apontar. Parar na etapa anterior
+   * deixava o arquivo inalcançável pelo Orbi, mesmo existindo no Drive.
+   *
+   * `depositSection` é a etapa onde o arquivo desta etapa deve ser depositado:
+   * a pasta dela, quando tem; senão a última pasta disponível, para que quem
+   * está numa etapa sem pasta ainda consiga entregar o arquivo em algum lugar.
    */
   const orderedSections = useMemo(() => {
-    if (!card?.sections) return [] as { section: any; prevSection: any | null }[]
+    if (!card?.sections) return [] as { section: any; prevSection: any | null; depositSection: any | null }[]
     const arr = card.sections as any[]
-    return arr.map((section, i) => ({
-      section,
-      prevSection: i > 0 ? arr[i - 1] : null,
-    }))
+    return arr.map((section, i) => {
+      let prevSection: any = null
+      for (let j = i - 1; j >= 0; j--) {
+        if (arr[j].driveFolderUrl) { prevSection = arr[j]; break }
+      }
+      return {
+        section,
+        prevSection,
+        depositSection: section.driveFolderUrl ? section : prevSection,
+      }
+    })
   }, [card?.sections])
 
   useEffect(() => {
@@ -466,7 +479,7 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                 </div>
               )}
 
-              {orderedSections.map(({ section, prevSection }) => {
+              {orderedSections.map(({ section, prevSection, depositSection }) => {
                 const isOwner    = canEditSection(section)
                 const ownerUser  = section.owner
                 const isCurrent  = section.column.id === card.currentColumn?.id
@@ -591,10 +604,6 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                         icon="📁"
                         variant="get"
                       />
-                    ) : prevSection?.column?.driveDisabled ? (
-                      <NoDriveNotice
-                        text={`A etapa anterior (${prevSection.column.title}) foi criada sem pasta no Drive — não há arquivo para buscar.`}
-                      />
                     ) : null}
 
                     {/* Rich text editor — locked if not owner */}
@@ -621,17 +630,22 @@ export function CardDetailModal({ cardId, onClose, onArchived }: CardDetailModal
                       />
                     </div>
 
-                    {/* Drive: depositar arquivo nesta etapa */}
-                    {section.driveFolderUrl ? (
+                    {/* Drive: depositar arquivo. Etapa sem pasta própria cai na
+                        última pasta disponível — senão não haveria onde entregar. */}
+                    {depositSection?.driveFolderUrl ? (
                       <DriveLink
-                        url={section.driveFolderUrl}
-                        label={`Depositar arquivo — ${ownerUser.name} (${section.column.title})`}
+                        url={depositSection.driveFolderUrl}
+                        label={
+                          depositSection === section
+                            ? `Depositar arquivo — ${ownerUser.name} (${section.column.title})`
+                            : `Depositar arquivo — ${depositSection.owner.name} (${depositSection.column.title})`
+                        }
                         icon="📤"
                         variant="deposit"
                       />
                     ) : section.column?.driveDisabled ? (
                       <NoDriveNotice
-                        text="Esta etapa foi criada sem pasta no Drive. Marcaram “não criar pasta” ao criá-la — anexe o arquivo aqui embaixo."
+                        text="Esta etapa foi criada sem pasta no Drive, e nenhuma etapa antes dela tem pasta — anexe o arquivo aqui embaixo."
                       />
                     ) : null}
 
